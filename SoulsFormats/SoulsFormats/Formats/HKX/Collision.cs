@@ -759,6 +759,67 @@ namespace SoulsFormats
             }
         }
 
+        public class HKPSimpleMeshShapeTriangle : IHKXSerializable
+        {
+            public int X;
+            public int Y;
+            public int Z;
+            public ushort WeldingInfo;
+
+            public override void Read(HKX hkx, HKXSection section, HKXObject source, BinaryReaderEx br, HKXVariation variation)
+            {
+                X = br.ReadInt32();
+                Y = br.ReadInt32();
+                Z = br.ReadInt32();
+                WeldingInfo = br.ReadUInt16();
+                br.ReadUInt16();
+            }
+
+            public override void Write(HKX hkx, HKXSection section, BinaryWriterEx bw, uint sectionBaseOffset, HKXVariation variation)
+            {
+                bw.WriteInt32(X);
+                bw.WriteInt32(Y);
+                bw.WriteInt32(Z);
+                bw.WriteUInt16(WeldingInfo);
+                bw.WriteUInt16(0);
+            }
+        }
+
+        public class HKPSimpleMeshShape : HKXObject
+        {
+            public HKArray<HKVector4> Vertices;
+            public HKArray<HKPSimpleMeshShapeTriangle> Triangles;
+            public HKArray<HKByte> MaterialIndices;
+            public float Radius;
+            public byte WeldingType;
+
+            public override void Read(HKX hkx, HKXSection section, BinaryReaderEx br, HKXVariation variation)
+            {
+                br.ReadUInt64s(3);
+                Vertices = new HKArray<HKVector4>(hkx, section, this, br, variation);
+                Triangles = new HKArray<HKPSimpleMeshShapeTriangle>(hkx, section, this, br, variation);
+                MaterialIndices = new HKArray<HKByte>(hkx, section, this, br, variation);
+                Radius = br.ReadSingle();
+                WeldingType = br.ReadByte();
+                br.ReadUInt16();
+                br.ReadByte();
+            }
+
+            public override void Write(HKX hkx, HKXSection section, BinaryWriterEx bw, uint sectionBaseOffset, HKXVariation variation)
+            {
+                throw new NotImplementedException();
+                /*
+                s.WriteVector4Array(bw, m_vertices);
+                s.WriteClassArray<hkpSimpleMeshShapeTriangle>(bw, m_triangles);
+                s.WriteByteArray(bw, m_materialIndices);
+                bw.WriteSingle(m_radius);
+                bw.WriteByte((byte)m_weldingType);
+                bw.WriteUInt16(0);
+                bw.WriteByte(0);
+                */
+            }
+        }
+
         // Used in DeS/DS1/DS2 to store collision mesh data
         public class HKPStorageExtendedMeshShapeMeshSubpartStorage : HKXObject
         {

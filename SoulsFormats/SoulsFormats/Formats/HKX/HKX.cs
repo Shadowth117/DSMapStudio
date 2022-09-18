@@ -178,13 +178,13 @@ namespace SoulsFormats
             {
                 bw.WriteUInt32(0xFFFFFFFF);
             }
-
+            
             ClassSection.WriteHeader(bw, Variation);
             TypeSection.WriteHeader(bw, Variation);
             DataSection.WriteHeader(bw, Variation);
-            ClassSection.WriteData(bw, this, HKXVariation.HKXDS3);
-            TypeSection.WriteData(bw, this, HKXVariation.HKXDS3);
-            DataSection.WriteData(bw, this, HKXVariation.HKXDS3);
+            ClassSection.WriteData(bw, this, Variation);
+            TypeSection.WriteData(bw, this, Variation);
+            DataSection.WriteData(bw, this, Variation, true);
         }
 
         // Utility for asserting an empty pointer that accounts for the hkx pointer size
@@ -401,7 +401,7 @@ namespace SoulsFormats
                 }
             }
 
-            public void WriteData(BinaryWriterEx bw, HKX hkx, HKXVariation variation)
+            public void WriteData(BinaryWriterEx bw, HKX hkx, HKXVariation variation, bool padFF = false)
             {
                 uint absoluteOffset = (uint)bw.Position;
                 bw.FillUInt32("absoffset" + SectionID, absoluteOffset);
@@ -427,9 +427,18 @@ namespace SoulsFormats
                 {
                     glob.Write(bw);
                 }
+                if(padFF && (bw.Position % 16) != 0)
+                {
+                    padFF = false;
+                }
                 while ((bw.Position % 16) != 0)
                 {
                     bw.WriteByte(0xFF); // 16 byte align
+                }
+                if (padFF)
+                {
+                    bw.WriteUInt64(0xFFFFFFFFFFFFFFFF);
+                    bw.WriteUInt64(0xFFFFFFFFFFFFFFFF);
                 }
 
                 // Virtual fixups
@@ -529,9 +538,14 @@ namespace SoulsFormats
                             hkobject = new HKADefaultAnimatedReferenceFrame();
                             hkobject.Read(hkx, this, br, variation);
                         }
+                        else if (reference.ClassName.ClassName == "hkpSimpleMeshShape")
+                        {
+                            hkobject = new HKPSimpleMeshShape();
+                            hkobject.Read(hkx, this, br, variation);
+                        }
                         else
                         {
-                            hkobject = new HKXGenericObject();
+                            hkobject = new HKXGenericObject(reference.ClassName.ClassName);
                             ((HKXGenericObject)hkobject).Read(hkx, this, br, length, variation);
                         }
                     }
@@ -554,6 +568,11 @@ namespace SoulsFormats
             public string ClassName;
             public uint SectionOffset;
 
+            public HKXClassName(string className)
+            {
+                ClassName = className;
+            }
+
             internal HKXClassName(BinaryReaderEx br)
             {
                 Signature = br.ReadUInt32();
@@ -562,9 +581,15 @@ namespace SoulsFormats
                 ClassName = br.ReadASCII();
             }
 
-            public void Write(BinaryWriterEx bw, uint sectionBaseOffset)
+            public void Write(BinaryWriterEx bw, uint sectionBaseOffset, HKXVariation Variation)
             {
-                bw.WriteUInt32(Signature);
+                if(Variation == HKXVariation.HKXDeS)
+                {
+                    var endian = bw.BigEndian;
+                    bw.BigEndian = false;
+                    bw.WriteUInt32(Signature);
+                    bw.BigEndian = endian;
+                }
                 bw.WriteByte(0x09);
                 bw.WriteASCII(ClassName, true);
             }
@@ -897,7 +922,15 @@ namespace SoulsFormats
                 while ((bw.Position % 16) != 0)
                 {
                     // Write padding bytes to 16 byte align
-                    bw.WriteByte(0xFF);
+                    switch(variation)
+                    {
+                        case HKXVariation.HKXDeS:
+                            bw.WriteByte(0);
+                            break;
+                        default:
+                            bw.WriteByte(0xFF);
+                            break;
+                    }
                 }
                 // Go through and recursively write reference data for all the array members
                 foreach (var elem in Elements)
@@ -1219,6 +1252,16 @@ namespace SoulsFormats
             List<HKXLocalReference> LocalReferences;
             List<HKXGlobalReference> GlobalReferences;
 
+            public HKXGenericObject()
+            {
+
+            }
+
+            public HKXGenericObject(string className)
+            {
+                ClassName = new HKXClassName(className);
+            }
+
             public override void Read(HKX hkx, HKXSection section, BinaryReaderEx br, HKXVariation variation)
             {
                 throw new NotImplementedException();
@@ -1335,7 +1378,7 @@ namespace SoulsFormats
                 SectionOffset = (uint)bw.Position - sectionBaseOffset;
                 foreach (var cls in ClassNames)
                 {
-                    cls.Write(bw, sectionBaseOffset);
+                    cls.Write(bw, sectionBaseOffset, variation);
                 }
                 while ((bw.Position % 16) != 0)
                 {

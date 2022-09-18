@@ -137,6 +137,97 @@ namespace StudioCore.Resource
             });
         }
 
+        unsafe private void ProcessMesh(HKX.HKPSimpleMeshShape mesh, CollisionSubmesh dest)
+        {
+            var verts = mesh.Vertices.GetArrayData().Elements;
+            var MeshIndices = new int[mesh.Triangles.Capacity * 3];
+            var MeshVertices = new CollisionLayout[mesh.Triangles.Capacity * 3];
+            dest.PickingVertices = new Vector3[mesh.Triangles.Capacity * 3];
+            dest.PickingIndices = new int[mesh.Triangles.Capacity * 3];
+
+            var factory = Scene.Renderer.Factory;
+
+            for (int id = 0; id < mesh.Triangles.Capacity; id++)
+            {
+                int i = id * 3;
+                var tri = mesh.Triangles[id];
+                var vert1 = mesh.Vertices[tri.X].Vector;
+                var vert2 = mesh.Vertices[tri.Y].Vector;
+                var vert3 = mesh.Vertices[tri.Z].Vector;
+
+                MeshVertices[i] = new CollisionLayout();
+                MeshVertices[i + 1] = new CollisionLayout();
+                MeshVertices[i + 2] = new CollisionLayout();
+
+                MeshVertices[i].Position = new Vector3(vert1.X, vert1.Y, vert1.Z);
+                MeshVertices[i + 1].Position = new Vector3(vert2.X, vert2.Y, vert2.Z);
+                MeshVertices[i + 2].Position = new Vector3(vert3.X, vert3.Y, vert3.Z);
+                dest.PickingVertices[i] = new Vector3(vert1.X, vert1.Y, vert1.Z);
+                dest.PickingVertices[i + 1] = new Vector3(vert2.X, vert2.Y, vert2.Z);
+                dest.PickingVertices[i + 2] = new Vector3(vert3.X, vert3.Y, vert3.Z);
+                var n = Vector3.Normalize(Vector3.Cross(MeshVertices[i + 2].Position - MeshVertices[i].Position, MeshVertices[i + 1].Position - MeshVertices[i].Position));
+                MeshVertices[i].Normal[0] = (sbyte)(n.X * 127.0f);
+                MeshVertices[i].Normal[1] = (sbyte)(n.Y * 127.0f);
+                MeshVertices[i].Normal[2] = (sbyte)(n.Z * 127.0f);
+                MeshVertices[i + 1].Normal[0] = (sbyte)(n.X * 127.0f);
+                MeshVertices[i + 1].Normal[1] = (sbyte)(n.Y * 127.0f);
+                MeshVertices[i + 1].Normal[2] = (sbyte)(n.Z * 127.0f);
+                MeshVertices[i + 2].Normal[0] = (sbyte)(n.X * 127.0f);
+                MeshVertices[i + 2].Normal[1] = (sbyte)(n.Y * 127.0f);
+                MeshVertices[i + 2].Normal[2] = (sbyte)(n.Z * 127.0f);
+
+                MeshVertices[i].Color[0] = (byte)(53);
+                MeshVertices[i].Color[1] = (byte)(157);
+                MeshVertices[i].Color[2] = (byte)(255);
+                MeshVertices[i].Color[3] = (byte)(255);
+                MeshVertices[i + 1].Color[0] = (byte)(53);
+                MeshVertices[i + 1].Color[1] = (byte)(157);
+                MeshVertices[i + 1].Color[2] = (byte)(255);
+                MeshVertices[i + 1].Color[3] = (byte)(255);
+                MeshVertices[i + 2].Color[0] = (byte)(53);
+                MeshVertices[i + 2].Color[1] = (byte)(157);
+                MeshVertices[i + 2].Color[2] = (byte)(255);
+                MeshVertices[i + 2].Color[3] = (byte)(255);
+                MeshVertices[i].Barycentric[0] = 0;
+                MeshVertices[i].Barycentric[1] = 0;
+                MeshVertices[i + 1].Barycentric[0] = 1;
+                MeshVertices[i + 1].Barycentric[1] = 0;
+                MeshVertices[i + 2].Barycentric[0] = 0;
+                MeshVertices[i + 2].Barycentric[1] = 1;
+
+                MeshIndices[i] = i;
+                MeshIndices[i + 1] = i + 1;
+                MeshIndices[i + 2] = i + 2;
+                dest.PickingIndices[i] = i;
+                dest.PickingIndices[i + 1] = i + 1;
+                dest.PickingIndices[i + 2] = i + 2;
+            }
+
+            dest.VertexCount = MeshVertices.Length;
+            dest.IndexCount = MeshIndices.Length;
+
+            uint buffersize = (uint)dest.IndexCount * 4u;
+
+            fixed (void* ptr = dest.PickingVertices)
+            {
+                dest.Bounds = BoundingBox.CreateFromPoints((Vector3*)ptr, dest.PickingVertices.Count(), 12, Quaternion.Identity, Vector3.Zero, Vector3.One);
+            }
+
+            uint vbuffersize = (uint)MeshVertices.Length * CollisionLayout.SizeInBytes;
+
+            dest.GeomBuffer = Scene.Renderer.GeometryBufferAllocator.Allocate(vbuffersize, buffersize, (int)CollisionLayout.SizeInBytes, 4, (h) =>
+            {
+                h.FillIBuffer(MeshIndices, () =>
+                {
+                    MeshIndices = null;
+                });
+                h.FillVBuffer(MeshVertices, () =>
+                {
+                    MeshVertices = null;
+                });
+            });
+        }
+
         internal static Vector3 TransformVert(System.Numerics.Vector3 vert, HKX.HKNPBodyCInfo body)
         {
             var newVert = new Vector3(vert.X, vert.Y, vert.Z);
@@ -531,6 +622,21 @@ namespace StudioCore.Resource
                     {
                         var mesh = new CollisionSubmesh();
                         ProcessMesh(col, mesh);
+                        if (first)
+                        {
+                            Bounds = mesh.Bounds;
+                            first = false;
+                        }
+                        else
+                        {
+                            Bounds = BoundingBox.Combine(Bounds, mesh.Bounds);
+                        }
+                        submeshes.Add(mesh);
+                    }
+                    if (obj is HKX.HKPSimpleMeshShape scol)
+                    {
+                        var mesh = new CollisionSubmesh();
+                        ProcessMesh(scol, mesh);
                         if (first)
                         {
                             Bounds = mesh.Bounds;
