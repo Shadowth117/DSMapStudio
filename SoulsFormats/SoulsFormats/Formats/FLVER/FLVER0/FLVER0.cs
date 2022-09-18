@@ -41,6 +41,10 @@ namespace SoulsFormats
 
         public Matrix4x4 ComputeBoneWorldMatrix(int index)
         {
+            if(index == -1)
+            {
+                return Matrix4x4.Identity;
+            }
             var bone = Bones[index];
             Matrix4x4 matrix = Bones[index].ComputeLocalTransform();
             if (bone.ParentIndex != -1)
