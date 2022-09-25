@@ -13,7 +13,12 @@ namespace MyApp // Note: actual namespace depends on the project name.
             Debugger.Launch();
             if (args.Length == 0)
             {
-                Console.WriteLine("Please provide a Demon's Souls .hkx or an .obj with a matching Demon's Souls .hkx in the same folder.");
+                Console.WriteLine("DeSCollisionEdit Usage:");
+                Console.WriteLine("ex.  DeSCollisionEdit.exe n0008b0.nvm");
+                Console.WriteLine("     DeSCollisionEdit.exe -tonvm -be n0008b0.fbx");
+                Console.WriteLine("-be    : Big Endian Write");
+                Console.WriteLine("-le    : Little Endian Write");
+                Console.WriteLine("-tonvm : Convert model to nvm");
                 return;
             }
             bool bigEndianOut = true; //Only for NavMeshes for now
@@ -23,6 +28,7 @@ namespace MyApp // Note: actual namespace depends on the project name.
             for(i = 0; i < args.Length; i++)
             {
                 string arg = args[i];
+                arg = arg.ToLower();
                 if (arg[0] == ('-'))
                 {
                     switch(arg)
@@ -36,7 +42,7 @@ namespace MyApp // Note: actual namespace depends on the project name.
                         //case "-toHKX":
                         //    outFmt = "hkx";
                         //    break;
-                        case "-toNvm":
+                        case "-tonvm":
                             outFmt = "nvm";
                             break;
                     }
