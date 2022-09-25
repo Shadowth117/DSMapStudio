@@ -19,6 +19,13 @@ namespace MyApp // Note: actual namespace depends on the project name.
                 Console.WriteLine("-be    : Big Endian Write");
                 Console.WriteLine("-le    : Little Endian Write");
                 Console.WriteLine("-tonvm : Convert model to nvm");
+                Console.WriteLine("");
+                Console.WriteLine("For nvm, special settings are tied to the material name on particular triangles as follows:");
+                Console.WriteLine("Triangle Flags and Entity ids will be determined by the material name.");
+                Console.WriteLine("@ - EntityId  - EventId that disables the attached triangles");
+                Console.WriteLine("# - TriangleFlags - Special flags that can be placed to denote special areas like ladders, doors, and other funny areas.");
+                Console.WriteLine("% - ObstacleCount - Number of breakable objects on triangle? Probably going to be awkward to set normally.");
+                Console.WriteLine("Ex. @1501#GATE#LADDER#EVENT%3");
                 return;
             }
             bool bigEndianOut = true; //Only for NavMeshes for now
