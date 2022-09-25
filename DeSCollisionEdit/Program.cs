@@ -15,10 +15,11 @@ namespace MyApp // Note: actual namespace depends on the project name.
             {
                 Console.WriteLine("DeSCollisionEdit Usage:");
                 Console.WriteLine("ex.  DeSCollisionEdit.exe n0008b0.nvm");
-                Console.WriteLine("     DeSCollisionEdit.exe -tonvm -be n0008b0.fbx");
-                Console.WriteLine("-be    : Big Endian Write");
-                Console.WriteLine("-le    : Little Endian Write");
-                Console.WriteLine("-tonvm : Convert model to nvm");
+                Console.WriteLine("     DeSCollisionEdit.exe -tonvm -be -nvmDepth 4 n0008b0.fbx");
+                Console.WriteLine("-be       : Big Endian Write");
+                Console.WriteLine("-le       : Little Endian Write");
+                Console.WriteLine("-tonvm    : Convert model to nvm");
+                Console.WriteLine("-nvmdepth : The amount of times to subdivide the bounding boxes. Follow the argument with a number, ex '-nvmDepth 4'. Default is 4.");
                 Console.WriteLine("");
                 Console.WriteLine("For nvm, special settings are tied to the material name on particular triangles as follows:");
                 Console.WriteLine("Triangle Flags and Entity ids will be determined by the material name.");
@@ -26,11 +27,14 @@ namespace MyApp // Note: actual namespace depends on the project name.
                 Console.WriteLine("# - TriangleFlags - Special flags that can be placed to denote special areas like ladders, doors, and other funny areas.");
                 Console.WriteLine("% - ObstacleCount - Number of breakable objects on triangle? Probably going to be awkward to set normally.");
                 Console.WriteLine("Ex. @1501#GATE#LADDER#EVENT%3");
+                Console.WriteLine("Triangle Flags are as follows: NONE, INSIDE_WALL, BLOCK_GATE, CLOSED_DOOR, DOOR, HOLE, LADDER, LARGE_SPACE, EDGE, EVENT,");
+                Console.WriteLine("                               LANDING_POINT, FLOOR_TO_WALL, DEGENERATE, WALL, BLOCK, GATE, DISABLE");
                 return;
             }
             bool bigEndianOut = true; //Only for NavMeshes for now
 
             string outFmt = "";
+            int depth = 4; //A lot of nvmDepths seem to be 4 in official, but they vary a lot
             int i = 0;
             for(i = 0; i < args.Length; i++)
             {
@@ -51,6 +55,10 @@ namespace MyApp // Note: actual namespace depends on the project name.
                         //    break;
                         case "-tonvm":
                             outFmt = "nvm";
+                            break;
+                        case "-nvmdepth":
+                            i++;
+                            depth = Int32.Parse(args[i]);
                             break;
                     }
                 } else
@@ -141,7 +149,7 @@ namespace MyApp // Note: actual namespace depends on the project name.
                             aiScene = context.ImportFile(args[i], Assimp.PostProcessSteps.Triangulate | Assimp.PostProcessSteps.FlipUVs);
                             GetAIMeshes(aiMeshes, aiScene, aiScene.RootNode, false);
 
-                            var nvm = AItoNavMesh(aiScene, bigEndianOut);
+                            var nvm = AItoNavMesh(aiScene, bigEndianOut, depth);
 
                             nvm.Write(nvmPath);
                             break;
@@ -150,7 +158,7 @@ namespace MyApp // Note: actual namespace depends on the project name.
             }
         }
 
-        public static NVM AItoNavMesh(Assimp.Scene scene, bool bigEndianOut)
+        public static NVM AItoNavMesh(Assimp.Scene scene, bool bigEndianOut, int depth)
         {
             List<List<(int triId, int triVertId)>> faceListByVertexId = new List<List<(int triId, int triVertId)>>();
             var nvm = new NVM();
@@ -293,7 +301,7 @@ namespace MyApp // Note: actual namespace depends on the project name.
             }
 
             //Boxes - Bounding boxes that on the last stages of their trees can contain tri indices. Each subdivides into 4 sections and typically these only go 3-4 levels deeper
-            nvm.RootBox = GenerateNVMBoundingBox(nvm.Vertices, faceListByVertexId, rootBoxMinExtents, rootBoxMaxExtents, 0, 4);
+            nvm.RootBox = GenerateNVMBoundingBox(nvm.Vertices, faceListByVertexId, rootBoxMinExtents, rootBoxMaxExtents, 0, depth);
 
             return nvm;
         }
