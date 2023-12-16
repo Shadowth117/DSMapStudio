@@ -11,5 +11,7 @@ public enum GameType
     Bloodborne = 6,
     Sekiro = 7,
     EldenRing = 8,
-    ArmoredCoreVI = 9
+    ArmoredCoreVI = 9,
+    BillyHatcherPC = 1000,
+    BillyHatcherGC = 1001,
 }
