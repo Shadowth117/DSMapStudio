@@ -960,6 +960,10 @@ public class ParamBank
 
         UICache.ClearCaches();
 
+        if (locator.Type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
+        {
+            return;
+        }
         TaskManager.Run(new TaskManager.LiveTask("Param - Load Params", TaskManager.RequeueType.WaitThenRequeue,
             false, () =>
             {
