@@ -27,6 +27,7 @@ namespace DSMapStudio
         {
             AppDomain currentDomain = AppDomain.CurrentDomain;
             currentDomain.UnhandledException += CrashHandler;
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             Directory.SetCurrentDirectory(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? throw new InvalidOperationException());
             _version = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion ?? "undefined";
             var mapStudio = new MapStudioNew(new VulkanGraphicsContext(), _version);
