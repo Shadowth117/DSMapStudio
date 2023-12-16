@@ -1,5 +1,9 @@
 ﻿#nullable enable
+using AquaModelLibrary;
+using AquaModelLibrary.Extra.Ninja.BillyHatcher;
+using AquaModelLibrary.Extra.Ninja.BillyHatcher.LNDH;
 using DotNext.IO.MemoryMappedFiles;
+using Org.BouncyCastle.Utilities;
 using SoulsFormats;
 using StudioCore.MsbEditor;
 using StudioCore.Scene;
@@ -13,10 +17,12 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Veldrid;
 using Veldrid.Utilities;
+using static SoulsFormats.FLVER;
+using static SoulsFormats.TPF;
 
 namespace StudioCore.Resource;
 
-public class FlverResource : IResource, IDisposable
+public partial class FlverResource : IResource, IDisposable
 {
     //private static ArrayPool<FlverLayout> VerticesPool = ArrayPool<FlverLayout>.Create();
 
@@ -30,6 +36,8 @@ public class FlverResource : IResource, IDisposable
     public static Dictionary<string, FLVER2.BufferLayout> MaterialLayouts = new();
 
     public static object _matLayoutLock = new();
+    public MC2 Mc2;
+    public LND Lnd;
     public FLVER2 Flver;
 
     /// <summary>
@@ -67,10 +75,24 @@ public class FlverResource : IResource, IDisposable
 
     public GPUBufferAllocator.GPUBufferHandle StaticBoneBuffer { get; private set; }
 
-    public bool _Load(Memory<byte> bytes, AccessLevel al, GameType type)
+    public bool _Load(Memory<byte> bytes, AccessLevel al, GameType type, string path = null)
     {
-        bool ret;
-        if (type == GameType.DemonsSouls)
+        bool ret = false;
+        if(type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
+        {
+            var ext = path.Substring(0, 3);
+            switch (ext)
+            {
+                case "mc2":
+                    Mc2 = new MC2(bytes.ToArray());
+                    ret = LoadInternalMC2(al, type);
+                    break;
+                case "lnd":
+                    Lnd = new LND(bytes.ToArray());
+                    ret = LoadInternalLNDModel(al, type, path);
+                    break;
+            }
+        } else if (type == GameType.DemonsSouls)
         {
             FlverDeS = FLVER0.Read(bytes);
             ret = LoadInternalDeS(al, type);
@@ -99,8 +121,24 @@ public class FlverResource : IResource, IDisposable
 
     public bool _Load(string path, AccessLevel al, GameType type)
     {
-        bool ret;
-        if (type == GameType.DemonsSouls)
+        bool ret = false;
+        
+        if (type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
+        {
+            var byteArr = File.ReadAllBytes(path);
+            switch (Path.GetExtension(path))
+            {
+                case ".mc2":
+                    Mc2 = new MC2(byteArr);
+                    ret = LoadInternalMC2(al, type);
+                    break;
+                case "lnd":
+                    Lnd = new LND(byteArr);
+                    ret = LoadInternalLNDModel(al, type, path);
+                    break;
+            }
+        }
+        else if (type == GameType.DemonsSouls)
         {
             FlverDeS = FLVER0.Read(path);
             ret = LoadInternalDeS(al, type);
@@ -255,13 +293,8 @@ public class FlverResource : IResource, IDisposable
 
     private void ProcessMaterialTexture(FlverMaterial dest, string texType, string mpath, string mtd,
         GameType gameType,
-        out bool blend, out bool hasNormal2, out bool hasSpec2, out bool hasShininess2, out bool blendMask)
+        ref bool blend, ref bool hasNormal2, ref bool hasSpec2, ref bool hasShininess2, ref bool blendMask)
     {
-        blend = false;
-        blendMask = false;
-        hasNormal2 = false;
-        hasSpec2 = false;
-        hasShininess2 = false;
 
         string paramNameCheck;
         if (texType == null)
@@ -273,7 +306,8 @@ public class FlverResource : IResource, IDisposable
             paramNameCheck = texType.ToUpper();
         }
 
-        if (paramNameCheck == "G_DIFFUSETEXTURE2" || paramNameCheck == "G_DIFFUSE2" ||
+        var isGDif2 = paramNameCheck == "G_DIFFUSE_2";
+        if (paramNameCheck == "G_DIFFUSETEXTURE2" || paramNameCheck == "G_DIFFUSE2" || paramNameCheck == "G_DIFFUSE_2" ||
             paramNameCheck.Contains("ALBEDO_2"))
         {
             LookupTexture(FlverMaterial.TextureType.AlbedoTextureResource2, dest, texType, mpath, mtd);
@@ -284,7 +318,7 @@ public class FlverResource : IResource, IDisposable
         {
             LookupTexture(FlverMaterial.TextureType.AlbedoTextureResource, dest, texType, mpath, mtd);
         }
-        else if (paramNameCheck == "G_BUMPMAPTEXTURE2" || paramNameCheck == "G_BUMPMAP2" ||
+        else if (paramNameCheck == "G_BUMPMAPTEXTURE2" || paramNameCheck == "G_BUMPMAP2" || paramNameCheck == "G_BUMPMAP_2" ||
                  paramNameCheck.Contains("NORMAL_2"))
         {
             LookupTexture(FlverMaterial.TextureType.NormalTextureResource2, dest, texType, mpath, mtd);
@@ -296,7 +330,7 @@ public class FlverResource : IResource, IDisposable
         {
             LookupTexture(FlverMaterial.TextureType.NormalTextureResource, dest, texType, mpath, mtd);
         }
-        else if (paramNameCheck == "G_SPECULARTEXTURE2" || paramNameCheck == "G_SPECULAR2" ||
+        else if (paramNameCheck == "G_SPECULARTEXTURE2" || paramNameCheck == "G_SPECULAR2" || paramNameCheck == "G_SPECULAR_2" ||
                  paramNameCheck.Contains("SPECULAR_2"))
         {
             if (gameType is GameType.DarkSoulsRemastered or GameType.DarkSoulsIISOTFS)
@@ -341,6 +375,53 @@ public class FlverResource : IResource, IDisposable
             LookupTexture(FlverMaterial.TextureType.BlendmaskTextureResource, dest, texType, mpath, mtd);
             blendMask = true;
         }
+    }
+
+    private unsafe void ProcessMC2Material(FlverMaterial dest)
+    {
+        dest.MaterialName = "MC2Mat";
+        dest.MaterialBuffer = Renderer.MaterialBufferAllocator.Allocate((uint)sizeof(Material), sizeof(Material));
+        dest.MaterialData = new Material();
+        dest.ShaderName = @"NavSolid";
+        dest.LayoutType = MeshLayoutType.LayoutNavmesh;
+        dest.VertexLayout = MeshLayoutUtils.GetLayoutDescription(dest.LayoutType);
+        dest.VertexSize = MeshLayoutUtils.GetLayoutVertexSize(dest.LayoutType);
+        dest.SpecializationConstants = new List<SpecializationConstant>();
+        return;
+    }
+
+    private unsafe void ProcessLndMaterial(ARCLNDMaterialEntryRef mat, FlverMaterial dest, GameType type, int i)
+    {
+        dest.MaterialName = $"Mat_{i}";
+        dest.MaterialBuffer = Renderer.MaterialBufferAllocator.Allocate((uint)sizeof(Material), sizeof(Material));
+        dest.MaterialData = new Material();
+
+        //FLVER0 stores layouts directly in the material
+        if (!CFG.Current.EnableTexturing || mat.entry.TextureId == -1)
+        {
+            dest.ShaderName = @"SimpleFlver";
+            dest.LayoutType = MeshLayoutType.LayoutSky;
+            dest.VertexLayout = MeshLayoutUtils.GetLayoutDescription(dest.LayoutType);
+            dest.VertexSize = MeshLayoutUtils.GetLayoutVertexSize(dest.LayoutType);
+            dest.SpecializationConstants = new List<SpecializationConstant>();
+            return;
+        }
+
+        LookupTexture(FlverMaterial.TextureType.AlbedoTextureResource, dest, null, Lnd.texnames[mat.entry.TextureId], null);
+
+        dest.ShaderName = @"FlverShader\FlverShader";
+        dest.LayoutType = MeshLayoutType.LayoutStandard;
+
+        List<SpecializationConstant> specConstants = new()
+        {
+            new SpecializationConstant(0, (uint)type)
+        };
+
+        dest.SpecializationConstants = specConstants;
+        dest.VertexLayout = MeshLayoutUtils.GetLayoutDescription(dest.LayoutType);
+        dest.VertexSize = MeshLayoutUtils.GetLayoutVertexSize(dest.LayoutType);
+
+        dest.UpdateMaterial();
     }
 
     private unsafe void ProcessMaterial(IFlverMaterial mat, FlverMaterial dest, GameType type)
@@ -410,7 +491,7 @@ public class FlverResource : IResource, IDisposable
         foreach (IFlverTexture? matparam in mat.Textures)
         {
             ProcessMaterialTexture(dest, matparam.Type, matparam.Path, mat.MTD, type,
-                out blend, out hasNormal2, out hasSpec2, out hasShininess2, out blendMask);
+                ref blend, ref hasNormal2, ref hasSpec2, ref hasShininess2, ref blendMask);
         }
 
         if (blendMask)
@@ -474,7 +555,7 @@ public class FlverResource : IResource, IDisposable
             var ttype = isUTF ? br.GetUTF16(textures[i].typeOffset) : br.GetShiftJIS(textures[i].typeOffset);
             var tpath = isUTF ? br.GetUTF16(textures[i].pathOffset) : br.GetShiftJIS(textures[i].pathOffset);
             ProcessMaterialTexture(dest, ttype, tpath, mtd, type,
-                out blend, out hasNormal2, out hasSpec2, out hasShininess2, out blendMask);
+                ref blend, ref hasNormal2, ref hasSpec2, ref hasShininess2, ref blendMask);
         }
 
         if (blendMask)
@@ -537,6 +618,55 @@ public class FlverResource : IResource, IDisposable
         //{
         //    Debugger.Break();
         //}
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private unsafe void FillVertexColor(byte* dest, ref FLVER.Vertex v)
+    {
+        dest[0] = (byte)(v.Colors[0].R * 255);
+        dest[1] = (byte)(v.Colors[0].G * 255);
+        dest[2] = (byte)(v.Colors[0].B * 255);
+        dest[3] = (byte)(v.Colors[0].A * 255);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private unsafe void FillVertexColorDefault(byte* dest)
+    {
+        dest[0] = 255;
+        dest[1] = 255;
+        dest[2] = 255;
+        dest[3] = 255;
+    }
+
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private unsafe void FillVertexColor(byte* dest, BinaryReaderEx br, FLVER.LayoutType type)
+    {
+        if (type == LayoutType.Float4)
+        {
+            dest[0] = (byte)(br.ReadSingle() * 255);
+            dest[1] = (byte)(br.ReadSingle() * 255);
+            dest[2] = (byte)(br.ReadSingle() * 255);
+            dest[3] = (byte)(br.ReadSingle() * 255);
+        }
+        else if (type == LayoutType.Byte4A)
+        {
+            // Definitely RGBA in DeS
+            dest[0] = br.ReadByte();
+            dest[1] = br.ReadByte();
+            dest[2] = br.ReadByte();
+            dest[3] = br.ReadByte();
+        }
+        else if (type == LayoutType.Byte4C)
+        {
+            // Definitely RGBA in DS1
+            dest[0] = br.ReadByte();
+            dest[1] = br.ReadByte();
+            dest[2] = br.ReadByte();
+            dest[3] = br.ReadByte();
+        }
+        else
+            throw new NotImplementedException($"Read not implemented for {type} color.");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -917,6 +1047,7 @@ public class FlverResource : IResource, IDisposable
             FillUVShortZero((*v).Uv1);
             FillBinormalBitangentSNorm8Zero((*v).Binormal, (*v).Bitangent);
             var posfilled = false;
+            var colorFilled = false;
             foreach (FlverBufferLayoutMember l in layouts)
             {
                 // ER meme
@@ -943,6 +1074,11 @@ public class FlverResource : IResource, IDisposable
                 {
                     FillBinormalBitangentSNorm8((*v).Binormal, (*v).Bitangent, &n, br, l.type);
                 }
+                else if (l.semantic == FLVER.LayoutSemantic.VertexColor && l.index == 0)
+                {
+                    FillVertexColor((*v).Color, br, l.type);
+                    colorFilled = true;
+                }
                 else
                 {
                     EatVertex(br, l.type);
@@ -952,6 +1088,10 @@ public class FlverResource : IResource, IDisposable
             if (!posfilled)
             {
                 (*v).Position = new Vector3(0, 0, 0);
+            }
+            if (!colorFilled)
+            {
+                FillVertexColorDefault((*v).Color);
             }
 
             pickingVerts[i] = (*v).Position;
@@ -991,6 +1131,14 @@ public class FlverResource : IResource, IDisposable
                 {
                     FillBinormalBitangentSNorm8Zero((*v).Binormal, (*v).Bitangent);
                 }
+
+                if (vert.Colors?.Count > 0)
+                {
+                    FillVertexColor((*v).Color, ref vert);
+                } else
+                {
+                    FillVertexColorDefault((*v).Color);
+                }
             }
         }
     }
@@ -1026,6 +1174,15 @@ public class FlverResource : IResource, IDisposable
                 {
                     FillBinormalBitangentSNorm8Zero((*v).Binormal, (*v).Bitangent);
                 }
+
+                if (vert.Colors?.Count > 0)
+                {
+                    FillVertexColor((*v).Color, ref vert);
+                }
+                else
+                {
+                    FillVertexColorDefault((*v).Color);
+                }
             }
         }
     }
@@ -1043,6 +1200,7 @@ public class FlverResource : IResource, IDisposable
                 Vector3 n = Vector3.UnitX;
                 FillBinormalBitangentSNorm8Zero((*v).Binormal, (*v).Bitangent);
                 var uvsfilled = 0;
+                var colorFilled = false;
                 foreach (FlverBufferLayoutMember l in layouts)
                 {
                     // ER meme
@@ -1069,6 +1227,11 @@ public class FlverResource : IResource, IDisposable
                     {
                         FillBinormalBitangentSNorm8((*v).Binormal, (*v).Bitangent, &n, br, l.type);
                     }
+                    else if (l.semantic == FLVER.LayoutSemantic.VertexColor && l.index == 0)
+                    {
+                        FillVertexColor((*v).Color, br, l.type);
+                        colorFilled = true;
+                    }
                     else
                     {
                         EatVertex(br, l.type);
@@ -1076,6 +1239,10 @@ public class FlverResource : IResource, IDisposable
                 }
 
                 pickingVerts[i] = (*v).Position;
+                if (!colorFilled)
+                {
+                    FillVertexColorDefault((*v).Color);
+                }
             }
         }
 
@@ -1106,6 +1273,14 @@ public class FlverResource : IResource, IDisposable
                 {
                     FillBinormalBitangentSNorm8Zero((*v).Binormal, (*v).Bitangent);
                 }
+                if (vert.Colors?.Count > 0)
+                {
+                    FillVertexColor((*v).Color, ref vert);
+                }
+                else
+                {
+                    FillVertexColorDefault((*v).Color);
+                }
             }
         }
     }
@@ -1134,8 +1309,261 @@ public class FlverResource : IResource, IDisposable
                 {
                     FillBinormalBitangentSNorm8Zero((*v).Binormal, (*v).Bitangent);
                 }
+
+                if (vert.Colors?.Count > 0)
+                {
+                    FillVertexColor((*v).Color, ref vert);
+                }
+                else
+                {
+                    FillVertexColorDefault((*v).Color);
+                }
             }
         }
+    }
+
+    private unsafe void ProcessMC2Mesh(FlverSubmesh dest)
+    {
+        ResourceFactory? factory = Renderer.Factory;
+
+        dest.Material = GPUMaterials[0];
+        dest.MeshFacesets = new List<FlverSubmesh.FlverSubmeshFaceSet>();
+
+        List<Vector3> verts = Mc2.vertPositions;
+        dest.VertexCount = Mc2.faceData.Count * 3;
+        var IndexCount = Mc2.faceData.Count * 3;
+        var buffersize = (uint)IndexCount * 4u;
+        var vbuffersize = (uint)dest.VertexCount * NavmeshLayout.SizeInBytes;
+        dest.GeomBuffer =
+            Renderer.GeometryBufferAllocator.Allocate(vbuffersize, buffersize, (int)NavmeshLayout.SizeInBytes, 4);
+        var MeshVertices =
+            new Span<NavmeshLayout>(dest.GeomBuffer.MapVBuffer().ToPointer(), dest.VertexCount);
+        var MeshIndicesOffset = dest.GeomBuffer.MapIBuffer();
+        var fs16 = new Span<ushort>(MeshIndicesOffset.ToPointer(), IndexCount);
+        dest.PickingVertices = Marshal.AllocHGlobal(Mc2.faceData.Count * 3 * sizeof(Vector3));
+        Span<Vector3> pvhandle = new(dest.PickingVertices.ToPointer(), Mc2.faceData.Count * 3);
+
+        FlverSubmesh.FlverSubmeshFaceSet newFaceSet = new()
+        {
+            BackfaceCulling = true,
+            IsTriangleStrip = false,
+            IndexOffset = 0,
+            IndexCount = IndexCount,
+            Is32Bit = false,
+            PickingIndicesCount = IndexCount
+        };
+
+        for (var id = 0; id < Mc2.faceData.Count; id++)
+        {
+            var i = id * 3;
+            Vector3 vert1 = Mc2.vertPositions[Mc2.faceData[id].vert0];
+            Vector3 vert2 = Mc2.vertPositions[Mc2.faceData[id].vert1];
+            Vector3 vert3 = Mc2.vertPositions[Mc2.faceData[id].vert2];
+
+            MeshVertices[i] = new NavmeshLayout();
+            MeshVertices[i + 1] = new NavmeshLayout();
+            MeshVertices[i + 2] = new NavmeshLayout();
+
+            MeshVertices[i].Position = new Vector3(vert1.X, vert1.Y, -vert1.Z);
+            MeshVertices[i + 1].Position = new Vector3(vert2.X, vert2.Y, -vert2.Z);
+            MeshVertices[i + 2].Position = new Vector3(vert3.X, vert3.Y, -vert3.Z);
+            pvhandle[i] = new Vector3(vert1.X, vert1.Y, -vert1.Z);
+            pvhandle[i + 1] = new Vector3(vert2.X, vert2.Y, -vert2.Z);
+            pvhandle[i + 2] = new Vector3(vert3.X, vert3.Y, -vert3.Z);
+            Vector3 n = Mc2.faceData[id].faceNormal;
+            n.Z = -n.Z;
+            MeshVertices[i].Normal[0] = (sbyte)(n.X * 127.0f);
+            MeshVertices[i].Normal[1] = (sbyte)(n.Y * 127.0f);
+            MeshVertices[i].Normal[2] = (sbyte)(n.Z * 127.0f);
+            MeshVertices[i + 1].Normal[0] = (sbyte)(n.X * 127.0f);
+            MeshVertices[i + 1].Normal[1] = (sbyte)(n.Y * 127.0f);
+            MeshVertices[i + 1].Normal[2] = (sbyte)(n.Z * 127.0f);
+            MeshVertices[i + 2].Normal[0] = (sbyte)(n.X * 127.0f);
+            MeshVertices[i + 2].Normal[1] = (sbyte)(n.Y * 127.0f);
+            MeshVertices[i + 2].Normal[2] = (sbyte)(n.Z * 127.0f);
+
+            if ((Mc2.faceData[id].flagSet0 & MC2.FlagSet0.Lava) > 0)
+            {
+                MeshVertices[i + 2].Color[0] = MeshVertices[i + 1].Color[0] = MeshVertices[i].Color[0] = 255;
+                MeshVertices[i + 2].Color[1] = MeshVertices[i + 1].Color[1] = MeshVertices[i].Color[1] = 49;
+                MeshVertices[i + 2].Color[2] = MeshVertices[i + 1].Color[2] = MeshVertices[i].Color[2] = 30;
+                MeshVertices[i + 2].Color[3] = MeshVertices[i + 1].Color[3] = MeshVertices[i].Color[3] = 255;
+            }
+            else if ((Mc2.faceData[id].flagSet1 & MC2.FlagSet1.Drown) > 0)
+            {
+                MeshVertices[i + 2].Color[0] = MeshVertices[i + 1].Color[0] = MeshVertices[i].Color[0] = 8;
+                MeshVertices[i + 2].Color[1] = MeshVertices[i + 1].Color[1] = MeshVertices[i].Color[1] = 165;
+                MeshVertices[i + 2].Color[2] = MeshVertices[i + 1].Color[2] = MeshVertices[i].Color[2] = 204;
+                MeshVertices[i + 2].Color[3] = MeshVertices[i + 1].Color[3] = MeshVertices[i].Color[3] = 255;
+            }
+            else if ((Mc2.faceData[id].flagSet1 & MC2.FlagSet1.Quicksand) > 0)
+            {
+                MeshVertices[i + 2].Color[0] = MeshVertices[i + 1].Color[0] = MeshVertices[i].Color[0] = 246;
+                MeshVertices[i + 2].Color[1] = MeshVertices[i + 1].Color[1] = MeshVertices[i].Color[1] = 226;
+                MeshVertices[i + 2].Color[2] = MeshVertices[i + 1].Color[2] = MeshVertices[i].Color[2] = 102;
+                MeshVertices[i + 2].Color[3] = MeshVertices[i + 1].Color[3] = MeshVertices[i].Color[3] = 255;
+            }
+            else if ((Mc2.faceData[id].flagSet0 & MC2.FlagSet0.Death) > 0)
+            {
+                MeshVertices[i + 2].Color[0] = MeshVertices[i + 1].Color[0] = MeshVertices[i].Color[0] = 30;
+                MeshVertices[i + 2].Color[1] = MeshVertices[i + 1].Color[1] = MeshVertices[i].Color[1] = 30;
+                MeshVertices[i + 2].Color[2] = MeshVertices[i + 1].Color[2] = MeshVertices[i].Color[2] = 30;
+                MeshVertices[i + 2].Color[3] = MeshVertices[i + 1].Color[3] = MeshVertices[i].Color[3] = 255;
+            }
+            else if ((Mc2.faceData[id].flagSet0 & MC2.FlagSet0.Slide) > 0)
+            {
+                MeshVertices[i + 2].Color[0] = MeshVertices[i + 1].Color[0] = MeshVertices[i].Color[0] = 101;
+                MeshVertices[i + 2].Color[1] = MeshVertices[i + 1].Color[1] = MeshVertices[i].Color[1] = 209;
+                MeshVertices[i + 2].Color[2] = MeshVertices[i + 1].Color[2] = MeshVertices[i].Color[2] = 82;
+                MeshVertices[i + 2].Color[3] = MeshVertices[i + 1].Color[3] = MeshVertices[i].Color[3] = 255;
+            }
+            else if ((Mc2.faceData[id].flagSet1 & MC2.FlagSet1.Snow) > 0)
+            {
+                MeshVertices[i + 2].Color[0] = MeshVertices[i + 1].Color[0] = MeshVertices[i].Color[0] = 215;
+                MeshVertices[i + 2].Color[1] = MeshVertices[i + 1].Color[1] = MeshVertices[i].Color[1] = 215;
+                MeshVertices[i + 2].Color[2] = MeshVertices[i + 1].Color[2] = MeshVertices[i].Color[2] = 255;
+                MeshVertices[i + 2].Color[3] = MeshVertices[i + 1].Color[3] = MeshVertices[i].Color[3] = 255;
+            }
+            else
+            {
+                MeshVertices[i + 2].Color[0] = MeshVertices[i + 1].Color[0] = MeshVertices[i].Color[0] = 192;
+                MeshVertices[i + 2].Color[1] = MeshVertices[i + 1].Color[1] = MeshVertices[i].Color[1] = 192;
+                MeshVertices[i + 2].Color[2] = MeshVertices[i + 1].Color[2] = MeshVertices[i].Color[2] = 192;
+                MeshVertices[i + 2].Color[3] = MeshVertices[i + 1].Color[3] = MeshVertices[i].Color[3] = 255;
+            }
+
+            MeshVertices[i].Barycentric[0] = 0;
+            MeshVertices[i].Barycentric[1] = 0;
+            MeshVertices[i + 1].Barycentric[0] = 1;
+            MeshVertices[i + 1].Barycentric[1] = 0;
+            MeshVertices[i + 2].Barycentric[0] = 0;
+            MeshVertices[i + 2].Barycentric[1] = 1;
+
+            fs16[i] = (ushort)(i);
+            fs16[i + 1] = (ushort)(i + 1);
+            fs16[i + 2] = (ushort)(i + 2);
+        }
+        dest.MeshFacesets.Add(newFaceSet);
+        dest.GeomBuffer.UnmapVBuffer();
+        dest.GeomBuffer.UnmapIBuffer();
+
+        dest.Bounds = BoundingBox.CreateFromPoints((Vector3*)dest.PickingVertices.ToPointer(), dest.VertexCount, 12,
+            Quaternion.Identity, Vector3.Zero, Vector3.One);
+    }
+
+    private unsafe void ProcessLNDMesh(ARCLNDModel model, ARCLNDMeshData mesh, FlverSubmesh dest)
+    {
+        ResourceFactory? factory = Renderer.Factory;
+        var faceData = model.arcFaceDataList[mesh.faceDataId];
+        dest.Material = GPUMaterials[mesh.matEntryId];
+
+        var vSize = dest.Material.VertexSize;
+        int faceCount = 0;
+
+        foreach(var faceSet in faceData.triIndicesList0)
+        {
+            faceCount += faceSet.Count - 2;
+        }
+        foreach(var faceSet in faceData.triIndicesList1)
+        {
+            faceCount += faceSet.Count - 2;
+        }
+
+        dest.PickingVertices = Marshal.AllocHGlobal(faceCount * 3 * sizeof(Vector3));
+        Span<Vector3> pvhandle = new(dest.PickingVertices.ToPointer(), faceCount * 3);
+        var vbuffersize = (uint)faceCount * 3 * vSize;
+
+        dest.VertexCount = faceCount * 3;
+
+        dest.MeshFacesets = new List<FlverSubmesh.FlverSubmeshFaceSet>();
+
+        Span<ushort> fs16 = null;
+
+        var indicesTotal = faceCount * 3;
+
+        dest.GeomBuffer = Renderer.GeometryBufferAllocator.Allocate(vbuffersize,
+            (uint)indicesTotal * 2, (int)vSize, 4);
+        var meshVertices = dest.GeomBuffer.MapVBuffer();
+        var meshIndices = dest.GeomBuffer.MapIBuffer();
+        /*
+        if (dest.Material.LayoutType == MeshLayoutType.LayoutSky)
+        {
+            FillVerticesNormalOnly(mesh, pvhandle, meshVertices);
+        }
+        else if (dest.Material.LayoutType == MeshLayoutType.LayoutUV2)
+        {
+            FillVerticesUV2(mesh, pvhandle, meshVertices);
+        }
+        else
+        {
+            FillVerticesStandard(mesh, pvhandle, meshVertices);
+        }
+
+        if (indicesTotal != 0)
+        {
+            var fs32 = new Span<int>(meshIndices.ToPointer(), indicesTotal);
+
+            FlverSubmesh.FlverSubmeshFaceSet newFaceSet = new()
+            {
+                BackfaceCulling = true,
+                IsTriangleStrip = false,
+                //IndexBuffer = factory.CreateBuffer(new BufferDescription(buffersize, BufferUsage.IndexBuffer)),
+                IndexOffset = 0,
+                IndexCount = indicesTotal,
+                Is32Bit = true,
+                PickingIndicesCount = indicesTotal
+                //PickingIndices = Marshal.AllocHGlobal(indices.Length * 4),
+            };
+            int faceIndexId = 0;
+            AddFromARCPolyData(model, pvhandle, meshVertices, fs16, faceData.triIndicesList0, faceData.triIndicesListStarts0, faceData.flags, ref faceIndexId, 0);
+            AddFromARCPolyData(model, pvhandle, meshVertices, fs16, faceData.triIndicesList1, faceData.triIndicesListStarts1, faceData.flags, ref faceIndexId, 1);
+
+            dest.MeshFacesets.Add(newFaceSet);
+        }
+        */
+        dest.GeomBuffer.UnmapVBuffer();
+        dest.GeomBuffer.UnmapIBuffer();
+
+        dest.Bounds = BoundingBox.CreateFromPoints((Vector3*)dest.PickingVertices.ToPointer(), dest.VertexCount, 12,
+            Quaternion.Identity, Vector3.Zero, Vector3.One);
+    }
+
+    private static void AddFromARCPolyData(ARCLNDModel mdl, Span<ushort> fs16s, List<List<List<int>>> triIndicesList, List<List<List<int>>> triIndicesListStarts, ArcLndVertType flags, ref int faceIndexId, int listFlip)
+    {/*
+        for (int s = 0; s < triIndicesList.Count; s++)
+        {
+            var strip = triIndicesList[s];
+            var stripStart = triIndicesListStarts[s];
+            if (stripStart[0][0] == 0x98)
+            {
+                for (int i = 0; i < strip.Count - 2; i++)
+                {
+                    int x, y, z;
+                    if (((i + listFlip) & 1) > 0)
+                    {
+                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i], flags);
+                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 1], flags);
+                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 2], flags);
+                    }
+                    else
+                    {
+                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 2], flags);
+                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 1], flags);
+                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i], flags);
+                    }
+                }
+            }
+            else if (stripStart[0][0] == 0x90)
+            {
+                for (int i = 0; i < strip.Count - 2; i += 3)
+                {
+                    fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 2], flags);
+                    fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 1], flags);
+                    fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i], flags);
+                }
+            }
+        }
+        */
     }
 
     private unsafe void ProcessMesh(FLVER0.Mesh mesh, FlverSubmesh dest)
@@ -1637,6 +2065,112 @@ public class FlverResource : IResource, IDisposable
         }
 
         Marshal.FreeHGlobal(dest.PickingVertices);
+    }
+    private bool LoadInternalMC2(AccessLevel al, GameType type)
+    {
+        if (al == AccessLevel.AccessFull || al == AccessLevel.AccessGPUOptimizedOnly)
+        {
+            GPUMeshes = new FlverSubmesh[1];
+            GPUMaterials = new FlverMaterial[1];
+            Bounds = new BoundingBox();
+            Bones = new List<FLVER.Bone>() { new FLVER.Bone() };
+            BoneTransforms = new List<Matrix4x4>();
+            for (var i = 0; i < Bones.Count; i++)
+            {
+                BoneTransforms.Add(Bones[i].ComputeLocalTransform());
+            }
+
+            GPUMaterials[0] = new FlverMaterial();
+            ProcessMC2Material(GPUMaterials[0]);
+
+            GPUMeshes[0] = new FlverSubmesh();
+
+            ProcessMC2Mesh(GPUMeshes[0]);
+            Bounds = GPUMeshes[0].Bounds;
+            BoneTransforms.Clear();
+        }
+
+        if (al == AccessLevel.AccessGPUOptimizedOnly)
+        {
+            Mc2 = null;
+        }
+
+        return true;
+    }
+
+    private bool LoadInternalLNDModel(AccessLevel al, GameType type, string path)
+    {
+        ARCLNDModel model = null;
+        var pathSplit = path.Split('/');
+        switch (pathSplit[2])
+        {
+            case "arcstatic":
+                foreach(var mdl in Lnd.arcLndModels)
+                {
+                    if(mdl.name == pathSplit[3])
+                    {
+                        model = mdl.model;
+                        break;
+                    }
+                }
+                break;
+            case "arcanim":
+                var animModelNum = Int32.Parse((pathSplit[3].Split('.'))[3]);
+                model = Lnd.arcLndAnimatedMeshDataList[animModelNum].model;
+                break;
+        }
+        int meshCount = 0;
+        foreach(var meshList in model.arcMeshDataList)
+        {
+            meshCount += meshList.Count;
+        }
+        if (al == AccessLevel.AccessFull || al == AccessLevel.AccessGPUOptimizedOnly)
+        {
+            GPUMeshes = new FlverSubmesh[meshCount];
+            GPUMaterials = new FlverMaterial[model.arcMatEntryList.Count];
+            Bounds = new BoundingBox();
+            Bones = new List<FLVER.Bone>() { new FLVER.Bone() };
+            BoneTransforms = new List<Matrix4x4>();
+            for (var i = 0; i < Bones.Count; i++)
+            {
+                BoneTransforms.Add(Bones[i].ComputeLocalTransform());
+            }
+
+            for (var i = 0; i < model.arcMatEntryList.Count; i++)
+            {
+                GPUMaterials[i] = new FlverMaterial();
+                ProcessLndMaterial(model.arcMatEntryList[i], GPUMaterials[i], type, i);
+            }
+
+            int meshCounter = 0;
+            for (var i = 0; i < model.arcMeshDataList.Count; i++)
+            {
+                for(var j = 0; j < model.arcMeshDataList[i].Count; j++)
+                {
+                    GPUMeshes[meshCounter] = new FlverSubmesh();
+
+                    ProcessLNDMesh(model, model.arcMeshDataList[i][j], GPUMeshes[meshCounter]);
+                    if (meshCounter == 0)
+                    {
+                        Bounds = GPUMeshes[meshCounter].Bounds;
+                    }
+                    else
+                    {
+                        Bounds = BoundingBox.Combine(Bounds, GPUMeshes[meshCounter].Bounds);
+                    }
+                    meshCounter++;
+                }
+            }
+
+            BoneTransforms.Clear();
+        }
+
+        if (al == AccessLevel.AccessGPUOptimizedOnly)
+        {
+            Lnd = null;
+        }
+
+        return true;
     }
 
     private bool LoadInternalDeS(AccessLevel al, GameType type)

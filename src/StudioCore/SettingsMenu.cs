@@ -241,19 +241,19 @@ public class SettingsMenu
                 }
 
                 if (ImGui.SliderFloat("Map camera speed (slow)",
-                        ref MsbEditor.Viewport.WorldView.CameraMoveSpeed_Slow, 0.1f, 999.0f))
+                        ref MsbEditor.Viewport.WorldView.CameraMoveSpeed_Slow, 0.1f, 50000.0f))
                 {
                     CFG.Current.GFX_Camera_MoveSpeed_Slow = MsbEditor.Viewport.WorldView.CameraMoveSpeed_Slow;
                 }
 
                 if (ImGui.SliderFloat("Map camera speed (normal)",
-                        ref MsbEditor.Viewport.WorldView.CameraMoveSpeed_Normal, 0.1f, 999.0f))
+                        ref MsbEditor.Viewport.WorldView.CameraMoveSpeed_Normal, 0.1f, 50000.0f))
                 {
                     CFG.Current.GFX_Camera_MoveSpeed_Normal = MsbEditor.Viewport.WorldView.CameraMoveSpeed_Normal;
                 }
 
                 if (ImGui.SliderFloat("Map camera speed (fast)",
-                        ref MsbEditor.Viewport.WorldView.CameraMoveSpeed_Fast, 0.1f, 999.0f))
+                        ref MsbEditor.Viewport.WorldView.CameraMoveSpeed_Fast, 0.1f, 50000.0f))
                 {
                     CFG.Current.GFX_Camera_MoveSpeed_Fast = MsbEditor.Viewport.WorldView.CameraMoveSpeed_Fast;
                 }

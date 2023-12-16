@@ -51,7 +51,7 @@ public class ResourceLoadPipeline<T> : IResourceLoadPipeline where T : class, IR
         _loadByteResourcesTransform = new ActionBlock<LoadByteResourceRequest>(r =>
         {
             var res = new T();
-            var success = res._Load(r.Data, r.AccessLevel, r.GameType);
+            var success = res._Load(r.Data, r.AccessLevel, r.GameType, r.VirtualPath);
             if (success)
             {
                 _loadedResources.Post(new ResourceLoadedReply(r.VirtualPath, r.AccessLevel, res));

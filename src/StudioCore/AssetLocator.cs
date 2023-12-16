@@ -1,4 +1,5 @@
-﻿using SoulsFormats;
+﻿using AquaModelLibrary.Extra.Ninja.BillyHatcher;
+using SoulsFormats;
 using StudioCore.Editor;
 using System;
 using System.Collections.Generic;
@@ -89,6 +90,7 @@ public class AssetLocator
     public static readonly string TxtFilter;
     public static readonly string FmgJsonFilter;
 
+    public static StageDef billyStageDef = null;
     private List<string> FullMapList;
 
     static AssetLocator()
@@ -99,7 +101,7 @@ public class AssetLocator
         // Game Executable (.EXE, EBOOT.BIN)|*.EXE*;*EBOOT.BIN*
         // Windows executable (*.EXE)|*.EXE*
         // Playstation executable (*.BIN)|*.BIN*
-        GameExecutableFilter = "exe,bin";
+        GameExecutableFilter = "exe,bin,nrc";
         // Project file (project.json)|PROJECT.JSON
         ProjectJsonFilter = "json";
         // Regulation file (regulation.bin)|REGULATION.BIN
@@ -197,6 +199,18 @@ public class AssetLocator
         else if (exePath.ToLower().Contains("armoredcore6.exe"))
         {
             type = GameType.ArmoredCoreVI;
+        } else if (exePath.ToLower().Contains("amem_boot.nrc"))
+        {
+            if(File.Exists(exePath.Replace("amem_boot.nrc", "BillyHatcher.exe")))
+            {
+                type = GameType.BillyHatcherPC;
+            } else
+            {
+                type = GameType.BillyHatcherGC;
+            }
+        } else if (exePath.ToLower().Contains("billyhatcher.exe"))
+        {
+            type = GameType.BillyHatcherPC;
         }
 
         return type;
@@ -339,8 +353,69 @@ public class AssetLocator
         {
             HashSet<string> mapSet = new();
 
+            if(Type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
+            {
+                StageDef stgDef = null;
+                if(Type is GameType.BillyHatcherGC)
+                {
+                    var bootPrd = new PRD(Path.Combine(GameRootDirectory, "k_boot.prd"));
+                    for(int i = 0; i < bootPrd.files.Count; i++)
+                    {
+                        var fName = bootPrd.fileNames[i];
+                        if(fName == "ge_stagedef.bin")
+                        {
+                            billyStageDef = stgDef = new StageDef(bootPrd.files[i]);
+                            break;
+                        }
+                    }
+                } else
+                {
+                    billyStageDef = stgDef = new StageDef(Path.Combine(GameRootDirectory, "ge_stagedef.bin"));
+                }
+                List<string> missions = new List<string>();
+                foreach(var def in stgDef.defs)
+                {
+                    missions.Add(def.missionName);
+                }
+
+                if (GameModDirectory != null)
+                {
+                    if (Type is GameType.BillyHatcherGC)
+                    {
+                        if(File.Exists(Path.Combine(GameModDirectory, "k_boot.prd")))
+                        {
+                            var bootPrd = new PRD(Path.Combine(GameModDirectory, "k_boot.prd"));
+                            for (int i = 0; i < bootPrd.files.Count; i++)
+                            {
+                                var fName = bootPrd.fileNames[i];
+                                if (fName == "ge_stagedef.bin")
+                                {
+                                    billyStageDef = stgDef = new StageDef(bootPrd.files[i]);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if(File.Exists(Path.Combine(GameModDirectory, "ge_stagedef.bin")))
+                        {
+                            billyStageDef = stgDef = new StageDef(Path.Combine(GameModDirectory, "ge_stagedef.bin"));
+                        }
+                    }
+                }
+                foreach (var def in stgDef.defs)
+                {
+                    if(!missions.Contains(def.missionName))
+                    {
+                        missions.Add(def.missionName);
+                    }
+                }
+
+                return missions.ToList();
+            }
             // DS2 has its own structure for msbs, where they are all inside individual folders
-            if (Type == GameType.DarkSoulsIISOTFS)
+            else if (Type == GameType.DarkSoulsIISOTFS)
             {
                 List<string> maps = Directory.GetFileSystemEntries(GameRootDirectory + @"\map", @"m*").ToList();
                 if (GameModDirectory != null)
@@ -754,6 +829,10 @@ public class AssetLocator
                 return "ER";
             case GameType.ArmoredCoreVI:
                 return "AC6";
+            case GameType.BillyHatcherPC:
+            case GameType.BillyHatcherGC:
+                return "BILLY";
+                break;
             default:
                 throw new Exception("Game type not set");
         }
@@ -949,6 +1028,81 @@ public class AssetLocator
     public List<AssetDescription> GetMapModels(string mapid)
     {
         List<AssetDescription> ret = new();
+        if (Type == GameType.BillyHatcherGC)
+        {
+            var prdPath = Path.Combine(GameRootDirectory, $"k_{billyStageDef.defsDict[mapid].missionName}.prd");
+            if (File.Exists(prdPath))
+            {
+                var prd = new PRD(prdPath);
+                for(int i = 0; i < prd.files.Count; i++)
+                {
+                    var fileName = prd.fileNames[i];
+                    var ext = Path.GetExtension(fileName);
+                    switch(ext)
+                    {
+                        case ".mc2":
+                            AssetDescription ad = GetMC2AssetDescription(mapid);
+                            ad.AssetArchiveVirtualPath = $"prd/k_{billyStageDef.defsDict[mapid].missionName}.prd/{billyStageDef.defsDict[mapid].mc2Filename}";
+                            ret.Add(ad);
+                            break;
+                        case ".lnd":
+                            var lnd = new LND(prd.files[i]);
+                            if (lnd.isArcLND)
+                            {
+                                for (int j = 0; j < lnd.arcLndModels.Count; j++)
+                                {
+                                    AssetDescription lad = GetStaticARCLNDAssetDescription(mapid, lnd, j);
+                                    lad.AssetArchiveVirtualPath = $"prd/k_{billyStageDef.defsDict[mapid].missionName}.prd/{billyStageDef.defsDict[mapid].lndFilename}/arcstatic/{fileName}";
+                                    ret.Add(lad);
+                                }
+                                for (int j = 0; j < lnd.arcLndAnimatedMeshDataList.Count; j++)
+                                {
+                                    AssetDescription lad = GetAnimARCLNDAssetDescription(mapid, j);
+                                    lad.AssetArchiveVirtualPath = $"prd/k_{billyStageDef.defsDict[mapid].missionName}.prd/{billyStageDef.defsDict[mapid].lndFilename}/arcanim/{billyStageDef.defsDict[mapid].lndFilename}.anim.{i}";
+                                    ret.Add(lad);
+                                }
+                            }
+                            else
+                            {
+
+                            }
+                            break;
+                    }
+                }
+            }
+        } else if(Type == GameType.BillyHatcherPC)
+        {
+            if(billyStageDef.defsDict[mapid].mc2Filename != null)
+            {
+                var mc2Path = Path.Combine(GameRootDirectory, billyStageDef.defsDict[mapid].mc2Filename);
+                if (billyStageDef.defsDict[mapid].mc2Filename != null && File.Exists(mc2Path))
+                {
+                    AssetDescription ad = GetMC2AssetDescription(mapid);
+                    ret.Add(ad);
+                }
+            }
+            var lndPath = Path.Combine(GameRootDirectory, billyStageDef.defsDict[mapid].lndFilename);
+            if (billyStageDef.defsDict[mapid].lndFilename != null && File.Exists(lndPath))
+            {
+                var lnd = new LND(lndPath);
+                if(lnd.isArcLND)
+                {
+                    for(int i = 0; i < lnd.arcLndModels.Count; i++)
+                    {
+                        AssetDescription ad = GetStaticARCLNDAssetDescription(mapid, lnd, i);
+                        ret.Add(ad);
+                    }
+                    for (int i = 0; i < lnd.arcLndAnimatedMeshDataList.Count; i++)
+                    {
+                        AssetDescription ad = GetAnimARCLNDAssetDescription(mapid, i);
+                        ret.Add(ad);
+                    }
+                } else
+                {
+
+                }
+            }
+        }
         if (Type == GameType.DarkSoulsIII || Type == GameType.Sekiro)
         {
             if (!Directory.Exists(GameRootDirectory + $@"\map\{mapid}\"))
@@ -1026,6 +1180,40 @@ public class AssetLocator
         return ret;
     }
 
+    private AssetDescription GetAnimARCLNDAssetDescription(string mapid, int i)
+    {
+        AssetDescription ad = new();
+        ad.AssetPath = Path.Combine(GameRootDirectory, billyStageDef.defsDict[mapid].lndFilename);
+        var name = $"{billyStageDef.defsDict[mapid].lndFilename}.anim.{i}";
+        ad.AssetName = name;
+        ad.AssetArchiveVirtualPath = null;
+        ad.AssetVirtualPath = $@"lnd/{billyStageDef.defsDict[mapid].lndFilename}/arcanim/{billyStageDef.defsDict[mapid].lndFilename}.anim.{i}";
+        return ad;
+    }
+
+    private AssetDescription GetStaticARCLNDAssetDescription(string mapid, LND lnd, int i)
+    {
+        var fileName = lnd.fileNames[i]; //Models come before land and mpl so this is fine.
+        AssetDescription ad = new();
+        ad.AssetPath = Path.Combine(GameRootDirectory, billyStageDef.defsDict[mapid].lndFilename);
+        var name = $"{billyStageDef.defsDict[mapid].lndFilename}.{fileName}";
+        ad.AssetName = name;
+        ad.AssetArchiveVirtualPath = null;
+        ad.AssetVirtualPath = $@"lnd/{billyStageDef.defsDict[mapid].lndFilename}/arcstatic/{fileName}";
+        return ad;
+    }
+
+    private AssetDescription GetMC2AssetDescription(string mapid)
+    {
+        AssetDescription ad = new();
+        ad.AssetPath = Path.Combine(GameRootDirectory, billyStageDef.defsDict[mapid].mc2Filename);
+        var name = Path.GetFileName($"{billyStageDef.defsDict[mapid].mc2Filename}");
+        ad.AssetName = name;
+        ad.AssetArchiveVirtualPath = null;
+        ad.AssetVirtualPath = $@"mc2/{billyStageDef.defsDict[mapid].mc2Filename}";
+        return ad;
+    }
+
     public string MapModelNameToAssetName(string mapid, string modelname)
     {
         if (Type == GameType.DarkSoulsPTDE || Type == GameType.DarkSoulsRemastered)
@@ -1058,12 +1246,13 @@ public class AssetLocator
     /// <returns>The map ID for the purpose of asset storage</returns>
     public string GetAssetMapID(string mapid)
     {
-        if (Type is GameType.EldenRing)
+        if (Type is GameType.BillyHatcherGC || Type is GameType.BillyHatcherPC)
         {
             return mapid;
-        }
-
-        if (Type is GameType.DarkSoulsRemastered)
+        } else if (Type is GameType.EldenRing)
+        {
+            return mapid;
+        } else if (Type is GameType.DarkSoulsRemastered)
         {
             if (mapid.StartsWith("m99"))
             {
@@ -1095,7 +1284,19 @@ public class AssetLocator
     public AssetDescription GetMapModel(string mapid, string model)
     {
         AssetDescription ret = new();
-        if (Type == GameType.DarkSoulsPTDE || Type == GameType.Bloodborne || Type == GameType.DemonsSouls)
+        var modelSplit = model.Split('.');
+        if (Type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
+        {
+            switch (modelSplit[1])
+            {
+                case "mc2":
+                    ret.AssetPath = GetAssetPath(billyStageDef.defsDict[mapid].mc2Filename);
+                    break;
+                case "lnd":
+                    ret.AssetPath = GetAssetPath(billyStageDef.defsDict[mapid].lndFilename);
+                    break;
+            }
+        } else if (Type == GameType.DarkSoulsPTDE || Type == GameType.Bloodborne || Type == GameType.DemonsSouls)
         {
             ret.AssetPath = GetAssetPath($@"map\{mapid}\{model}.flver");
         }
@@ -1121,7 +1322,45 @@ public class AssetLocator
         }
 
         ret.AssetName = model;
-        if (Type == GameType.DarkSoulsIISOTFS)
+        if (Type == GameType.BillyHatcherGC)
+        {
+            switch (modelSplit[1])
+            {
+                case "mc2":
+                    ret.AssetArchiveVirtualPath = $"prd/k_{billyStageDef.defsDict[mapid].missionName}.prd/{billyStageDef.defsDict[mapid].mc2Filename}";
+                    ret.AssetVirtualPath = $@"mc2/{billyStageDef.defsDict[mapid].mc2Filename}";
+                    break;
+                case "lnd":
+                    if(modelSplit.Length > 2 && modelSplit[2] == "anim")
+                    {
+                        ret.AssetArchiveVirtualPath = $"prd/k_{billyStageDef.defsDict[mapid].missionName}.prd/{billyStageDef.defsDict[mapid].lndFilename}/arcanim/{billyStageDef.defsDict[mapid].lndFilename}.anim.{modelSplit[3]}";
+                        ret.AssetVirtualPath = $@"lnd/{billyStageDef.defsDict[mapid].lndFilename}/arcanim/{billyStageDef.defsDict[mapid].lndFilename}.anim.{modelSplit[3]}";
+                    } else
+                    {
+                        ret.AssetArchiveVirtualPath = $"prd/k_{billyStageDef.defsDict[mapid].missionName}.prd/{billyStageDef.defsDict[mapid].lndFilename}/arcstatic/{modelSplit[2]}";
+                        ret.AssetVirtualPath = $@"lnd/{billyStageDef.defsDict[mapid].lndFilename}/arcstatic/{modelSplit[2]}";
+                    }
+                    break;
+            }
+        } else if (Type == GameType.BillyHatcherPC)
+        {
+            switch (modelSplit[1])
+            {
+                case "mc2":
+                    ret.AssetVirtualPath = $@"mc2/{billyStageDef.defsDict[mapid].mc2Filename}";
+                    break;
+                case "lnd":
+                    if (modelSplit.Length > 2 && modelSplit[2] == "anim")
+                    {
+                        ret.AssetVirtualPath = $@"lnd/{billyStageDef.defsDict[mapid].lndFilename}/arcanim/{billyStageDef.defsDict[mapid].lndFilename}.anim.{modelSplit[3]}";
+                    }
+                    else
+                    {
+                        ret.AssetVirtualPath = $@"lnd/{billyStageDef.defsDict[mapid].lndFilename}/arcstatic/{modelSplit[2]}";
+                    }
+                    break;
+            }
+        } else if (Type == GameType.DarkSoulsIISOTFS)
         {
             ret.AssetArchiveVirtualPath = $@"map/{mapid}/model";
             ret.AssetVirtualPath = $@"map/{mapid}/model/{model}.flv.dcx";
@@ -1886,11 +2125,26 @@ public class AssetLocator
     {
         var pathElements = virtualPath.Split('/');
         Regex mapRegex = new(@"^m\d{2}_\d{2}_\d{2}_\d{2}$");
-        var ret = "";
 
         // Parse the virtual path with a DFA and convert it to a game path
         var i = 0;
-        if (pathElements[i].Equals("map"))
+        if (pathElements[i] == "mc2")
+        {
+            i++;
+            bndpath = "";
+            return GetAssetPath(pathElements[i]);
+        } else if (pathElements[i] == "prd")
+        {
+            i++;
+            bndpath = GetAssetPath(pathElements[i]);
+            return null;
+        } else if (pathElements[i] == "nrc")
+        {
+            i++;
+            bndpath = GetAssetPath(pathElements[i]);
+            return "";
+        }
+        else if (pathElements[i].Equals("map"))
         {
             i++;
             if (pathElements[i].Equals("tex"))

@@ -192,7 +192,7 @@ public class AssetBrowser
                     }
                 }
             }
-            else if (_selected != null && _selected.StartsWith("m"))
+            else if (_selected != null)
             {
                 if (_mapModelCache.ContainsKey(_selected))
                 {

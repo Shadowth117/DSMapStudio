@@ -227,6 +227,22 @@ public unsafe struct NavmeshLayout
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct MC2Layout
+{
+    public const uint SizeInBytes = 24;
+    public Vector3 Position;
+    public Vector3 Normal;
+    public fixed byte Color[4];
+    public fixed byte Barycentric[4];
+
+    public static VertexLayoutDescription Layout = new(
+        new VertexElementDescription("position", VkFormat.R32G32B32Sfloat),
+        new VertexElementDescription("normal", VkFormat.R32G32B32Sfloat),
+        new VertexElementDescription("color", VkFormat.R8G8B8A8Uint),
+        new VertexElementDescription("barycentric", VkFormat.R8G8B8A8Uint));
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
 public unsafe struct PositionColor
 {
     public Vector3 Position;

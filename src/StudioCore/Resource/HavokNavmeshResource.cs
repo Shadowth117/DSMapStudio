@@ -34,7 +34,7 @@ public class HavokNavmeshResource : IResource, IDisposable
 
     public BoundingBox Bounds { get; set; }
 
-    public bool _Load(Memory<byte> bytes, AccessLevel al, GameType type)
+    public bool _Load(Memory<byte> bytes, AccessLevel al, GameType type, string ext = null)
     {
         BinaryReaderEx br = new(false, bytes);
         var des = new PackFileDeserializer();

@@ -263,9 +263,9 @@ public class ModelEditorScreen : EditorScreen, AssetBrowserEventHandler, SceneTr
 
             var minSpeed = 1.0f;
             var basespeed = Math.Max(minSpeed, (float)Math.Sqrt(mindim / 3.0f));
-            Viewport.WorldView.CameraMoveSpeed_Normal = basespeed;
-            Viewport.WorldView.CameraMoveSpeed_Slow = basespeed / 10.0f;
-            Viewport.WorldView.CameraMoveSpeed_Fast = basespeed * 10.0f;
+            Viewport.WorldView.CameraMoveSpeed_Normal = basespeed * 50f;
+            Viewport.WorldView.CameraMoveSpeed_Slow = basespeed * 50f / 10.0f;
+            Viewport.WorldView.CameraMoveSpeed_Fast = basespeed * 10.0f * 50f;
 
             Viewport.NearClip = Math.Max(0.001f, maxdim / 10000.0f);
         }
@@ -323,7 +323,7 @@ public class ModelEditorScreen : EditorScreen, AssetBrowserEventHandler, SceneTr
 
         if (_renderMesh != null)
         {
-            //RenderScene.RemoveObject(_renderMesh);
+            _renderMesh.Dispose();
         }
 
         _renderMesh = MeshRenderableProxy.MeshRenderableFromFlverResource(

@@ -20,7 +20,7 @@ public class HavokCollisionResource : IResource, IDisposable
 
     public VkFrontFace FrontFace { get; private set; }
 
-    public bool _Load(Memory<byte> bytes, AccessLevel al, GameType type)
+    public bool _Load(Memory<byte> bytes, AccessLevel al, GameType type, string ext = null)
     {
         if (type == GameType.Bloodborne)
         {

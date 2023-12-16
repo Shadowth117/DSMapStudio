@@ -1351,6 +1351,9 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
         if (AssetLocator.Type == GameType.ArmoredCoreVI)
         {
             //TODO AC6
+        } else if(AssetLocator.Type is GameType.BillyHatcherPC or GameType.BillyHatcherGC)
+        {
+
         }
         else if (AssetLocator.Type != GameType.Undefined)
         {

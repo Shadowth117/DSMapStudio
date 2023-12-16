@@ -110,7 +110,7 @@ public class TextureResource : IResource, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    bool IResource._Load(Memory<byte> bytes, AccessLevel al, GameType type)
+    bool IResource._Load(Memory<byte> bytes, AccessLevel al, GameType type, string ext = null)
     {
         return _LoadTexture(al);
     }

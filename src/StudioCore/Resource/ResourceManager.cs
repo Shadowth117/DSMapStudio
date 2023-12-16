@@ -1,4 +1,5 @@
-﻿using ImGuiNET;
+﻿using AquaModelLibrary.Extra.Ninja.BillyHatcher;
+using ImGuiNET;
 using Microsoft.Extensions.Logging;
 using SoulsFormats;
 using StudioCore.Scene;
@@ -123,7 +124,28 @@ public static class ResourceManager
                 var i = 0;
                 foreach (Tuple<IResourceLoadPipeline, string, BinderFileHeader> p in action.PendingResources)
                 {
-                    Memory<byte> f = action.Binder.ReadFile(p.Item3);
+                    Memory<byte> f;
+                    if (Locator.Type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
+                    {
+                        f = action.prd.files[p.Item3.ID];
+                        if(p.Item2.Substring(0, 3) == "lnd")
+                        {
+                            var lnd = new LND(f.ToArray());
+                            //Load GVM through Puyo
+                            if(lnd.gvmBytes != null)
+                            {
+                                //TODO
+                                /*
+                                action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, p.Item2, lnd.gvmBytes,
+                                    action.AccessLevel, Locator.Type));
+                                i++
+                                */
+                            }
+                        }
+                    } else
+                    {
+                        f = action.Binder.ReadFile(p.Item3);
+                    }
                     p.Item1.LoadByteResourceBlock.Post(new LoadByteResourceRequest(p.Item2, f, action.AccessLevel,
                         Locator.Type));
                     action._job.IncrementEstimateTaskSize(1);
@@ -132,19 +154,32 @@ public static class ResourceManager
 
                 foreach (Tuple<string, BinderFileHeader> t in action.PendingTPFs)
                 {
-                    try
+                    if (Locator.Type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
                     {
-                        TPF f = TPF.Read(action.Binder.ReadFile(t.Item2));
+                        //Load GVM through Puyo
+                        //TODO
+                        /*
                         action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, t.Item1, f,
                             action.AccessLevel, Locator.Type));
+                        i++;
+                        */
                     }
-                    catch (Exception e)
+                    else
                     {
-                        TaskLogs.AddLog($"Failed to load TPF \"{t.Item1}\"",
-                            LogLevel.Warning, TaskLogs.LogPriority.Normal, e);
+                        try
+                        {
+                            TPF f = TPF.Read(action.Binder.ReadFile(t.Item2));
+                            action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, t.Item1, f,
+                                action.AccessLevel, Locator.Type));
+                        }
+                        catch (Exception e)
+                        {
+                            TaskLogs.AddLog($"Failed to load TPF \"{t.Item1}\"",
+                                LogLevel.Warning, TaskLogs.LogPriority.Normal, e);
+                        }
+                        i++;
                     }
 
-                    i++;
                 }
             }
         }
@@ -294,6 +329,7 @@ public static class ResourceManager
     {
         // Process any resource notification requests
         var res = _notificationRequests.TryReceiveAll(out IList<AddResourceLoadNotificationRequest> requests);
+        
         if (res)
         {
             foreach (AddResourceLoadNotificationRequest r in requests)
@@ -525,6 +561,11 @@ public static class ResourceManager
         public List<int> TaskSizes = new();
         public int TotalSize = 0;
 
+        /// <summary>
+        /// Functions as a PRD or NRC archive
+        /// </summary>
+        public PRD prd = null;
+
         public LoadBinderResourcesAction(ResourceJob job, string virtpath, AccessLevel accessLevel,
             bool populateOnly, ResourceType mask, HashSet<string> whitelist)
         {
@@ -542,6 +583,50 @@ public static class ResourceManager
             {
                 string o;
                 var path = Locator.VirtualToRealPath(BinderVirtualPath, out o);
+                if (Locator.Type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
+                {
+                    //Handles both PRD and NRC pending extension
+                    prd = new PRD(o);
+
+                    var targetSplit = BinderVirtualPath.Split('/');
+                    string targetFileNameFull = "";
+                    for(int i = 2; i < targetSplit.Length; i++)
+                    {
+                        targetFileNameFull += targetSplit[i];
+                        if (i != targetSplit.Length - 1)
+                        {
+                            targetFileNameFull += '/';
+                        }
+                    }
+
+                    var targetFileName = targetSplit[2];
+                    for(int i = 0; i < prd.files.Count; i++)
+                    {
+                        var fileName = prd.fileNames[i];
+                        var ext = Path.GetExtension(fileName);
+                        string outName = fileName;
+                        if(fileName.ToLower() == targetFileName.ToLower())
+                        {
+                            IResourceLoadPipeline pipeline = null;
+                            switch (ext)
+                            {
+                                case ".mc2":
+                                    outName = "mc2/" + outName;
+                                    pipeline = _job.FlverLoadPipeline;
+                                    break;
+                                case ".lnd":
+                                    outName = "lnd/" + targetFileNameFull;
+                                    pipeline = _job.FlverLoadPipeline;
+                                    break;
+                            }
+                            PendingResources.Add(new Tuple<IResourceLoadPipeline, string, BinderFileHeader>(pipeline, outName, new BinderFileHeader(i, outName)));
+                        } else if(ext == ".gvm")
+                        {
+                            PendingTPFs.Add(new Tuple<string, BinderFileHeader>(fileName, new BinderFileHeader(i, fileName)));
+                        }
+                    }
+                }
+
                 Binder = InstantiateBinderReaderForFile(path, Locator.Type);
                 if (Binder == null)
                 {

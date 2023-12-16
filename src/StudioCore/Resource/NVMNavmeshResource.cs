@@ -24,7 +24,7 @@ public class NVMNavmeshResource : IResource, IDisposable
 
     public BoundingBox Bounds { get; set; }
 
-    public bool _Load(Memory<byte> bytes, AccessLevel al, GameType type)
+    public bool _Load(Memory<byte> bytes, AccessLevel al, GameType type, string ext = null)
     {
         Nvm = NVM.Read(bytes);
         return LoadInternal(al);
