@@ -1,9 +1,8 @@
 ﻿#nullable enable
-using AquaModelLibrary;
 using AquaModelLibrary.Extra.Ninja.BillyHatcher;
 using AquaModelLibrary.Extra.Ninja.BillyHatcher.LNDH;
 using DotNext.IO.MemoryMappedFiles;
-using Org.BouncyCastle.Utilities;
+using Microsoft.AspNetCore.Identity;
 using SoulsFormats;
 using StudioCore.MsbEditor;
 using StudioCore.Scene;
@@ -18,7 +17,6 @@ using System.Runtime.InteropServices;
 using Veldrid;
 using Veldrid.Utilities;
 using static SoulsFormats.FLVER;
-using static SoulsFormats.TPF;
 
 namespace StudioCore.Resource;
 
@@ -149,7 +147,7 @@ public partial class FlverResource : IResource, IDisposable
                 type != GameType.DarkSoulsPTDE)
             {
                 using var file =
-                    MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+                    MemoryMappedFile.CreateFromFile(path, System.IO.FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
                 using IMappedMemoryOwner accessor = file.CreateMemoryAccessor(0, 0, MemoryMappedFileAccess.Read);
                 BinaryReaderEx br = new(false, accessor.Memory);
                 DCX.Type ctype;
@@ -677,6 +675,16 @@ public partial class FlverResource : IResource, IDisposable
         dest[1] = (sbyte)(n.Y * 127.0f);
         dest[2] = (sbyte)(n.Z * 127.0f);
         dest[3] = (sbyte)v.NormalW;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private unsafe void FillNormalSNorm8V3(sbyte* dest, ref Vector3 nrm)
+    {
+        Vector3 n = Vector3.Normalize(new Vector3(nrm.X, nrm.Y, nrm.Z));
+        dest[0] = (sbyte)(n.X * 127.0f);
+        dest[1] = (sbyte)(n.Y * 127.0f);
+        dest[2] = (sbyte)(n.Z * 127.0f);
+        dest[3] = -1;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1477,27 +1485,13 @@ public partial class FlverResource : IResource, IDisposable
 
         dest.MeshFacesets = new List<FlverSubmesh.FlverSubmeshFaceSet>();
 
-        Span<ushort> fs16 = null;
-
         var indicesTotal = faceCount * 3;
 
         dest.GeomBuffer = Renderer.GeometryBufferAllocator.Allocate(vbuffersize,
-            (uint)indicesTotal * 2, (int)vSize, 4);
-        var meshVertices = dest.GeomBuffer.MapVBuffer();
+            (uint)indicesTotal * 4, (int)vSize, 4);
+        Span<FlverLayout> vhandle = new(dest.GeomBuffer.MapVBuffer().ToPointer(), faceCount * 3);
+
         var meshIndices = dest.GeomBuffer.MapIBuffer();
-        /*
-        if (dest.Material.LayoutType == MeshLayoutType.LayoutSky)
-        {
-            FillVerticesNormalOnly(mesh, pvhandle, meshVertices);
-        }
-        else if (dest.Material.LayoutType == MeshLayoutType.LayoutUV2)
-        {
-            FillVerticesUV2(mesh, pvhandle, meshVertices);
-        }
-        else
-        {
-            FillVerticesStandard(mesh, pvhandle, meshVertices);
-        }
 
         if (indicesTotal != 0)
         {
@@ -1515,12 +1509,12 @@ public partial class FlverResource : IResource, IDisposable
                 //PickingIndices = Marshal.AllocHGlobal(indices.Length * 4),
             };
             int faceIndexId = 0;
-            AddFromARCPolyData(model, pvhandle, meshVertices, fs16, faceData.triIndicesList0, faceData.triIndicesListStarts0, faceData.flags, ref faceIndexId, 0);
-            AddFromARCPolyData(model, pvhandle, meshVertices, fs16, faceData.triIndicesList1, faceData.triIndicesListStarts1, faceData.flags, ref faceIndexId, 1);
+            AddFromARCPolyData(model, pvhandle, vhandle, fs32, faceData.triIndicesList0, faceData.triIndicesListStarts0, faceData.flags, ref faceIndexId, 0);
+            AddFromARCPolyData(model, pvhandle, vhandle, fs32, faceData.triIndicesList1, faceData.triIndicesListStarts1, faceData.flags, ref faceIndexId, 1);
 
             dest.MeshFacesets.Add(newFaceSet);
         }
-        */
+        
         dest.GeomBuffer.UnmapVBuffer();
         dest.GeomBuffer.UnmapIBuffer();
 
@@ -1528,8 +1522,8 @@ public partial class FlverResource : IResource, IDisposable
             Quaternion.Identity, Vector3.Zero, Vector3.One);
     }
 
-    private static void AddFromARCPolyData(ARCLNDModel mdl, Span<ushort> fs16s, List<List<List<int>>> triIndicesList, List<List<List<int>>> triIndicesListStarts, ArcLndVertType flags, ref int faceIndexId, int listFlip)
-    {/*
+    private void AddFromARCPolyData(ARCLNDModel mdl, Span<Vector3> pvhandle, Span<FlverLayout> vhandle, Span<int> fs32, List<List<List<int>>> triIndicesList, List<List<List<int>>> triIndicesListStarts, ArcLndVertType flags, ref int faceIndexId, int listFlip)
+    {
         for (int s = 0; s < triIndicesList.Count; s++)
         {
             var strip = triIndicesList[s];
@@ -1541,15 +1535,15 @@ public partial class FlverResource : IResource, IDisposable
                     int x, y, z;
                     if (((i + listFlip) & 1) > 0)
                     {
-                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i], flags);
-                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 1], flags);
-                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 2], flags);
+                        fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i], flags, faceIndexId++);
+                        fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i + 1], flags, faceIndexId++);
+                        fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i + 2], flags, faceIndexId++);
                     }
                     else
                     {
-                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 2], flags);
-                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 1], flags);
-                        fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i], flags);
+                        fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i + 2], flags, faceIndexId++);
+                        fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i + 1], flags, faceIndexId++);
+                        fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i], flags, faceIndexId++);
                     }
                 }
             }
@@ -1557,13 +1551,62 @@ public partial class FlverResource : IResource, IDisposable
             {
                 for (int i = 0; i < strip.Count - 2; i += 3)
                 {
-                    fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 2], flags);
-                    fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i + 1], flags);
-                    fs16s[faceIndexId] = AddARCVert(mdl, fs16s, strip[i], flags);
+                    fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i + 2], flags, faceIndexId++);
+                    fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i + 1], flags, faceIndexId++);
+                    fs32[faceIndexId] = AddARCVert(mdl, pvhandle, vhandle, strip[i], flags, faceIndexId++);
                 }
             }
         }
-        */
+        
+    }
+
+    public unsafe int AddARCVert(ARCLNDModel mdl, Span<Vector3> pvhandle, Span<FlverLayout> vhandle, List<int> faceIds, ArcLndVertType flags, int index)
+    {
+        int i = 0;
+        fixed (FlverLayout* pverts = vhandle)
+        {
+            if ((flags & ArcLndVertType.Position) > 0)
+            {
+                var pos = mdl.arcVertDataSetList[0].PositionData[faceIds[i]];
+                pos.Z = -pos.Z;
+                pvhandle[index] = pos;
+                vhandle[index].Position = pos;
+                i++;
+            }
+            if ((flags & ArcLndVertType.Normal) > 0)
+            {
+                var nrm = Vector3.Normalize(mdl.arcVertDataSetList[0].NormalData[faceIds[i]]);
+                nrm.Z = -nrm.Z;
+                FillNormalSNorm8V3(pverts[index].Normal, ref nrm);
+                i++;
+            }
+            else
+            {
+                var nrm = Vector3.Normalize(mdl.arcVertDataSetList[0].faceNormalDict[faceIds[0]]);
+                nrm.Z = -nrm.Z;
+                FillNormalSNorm8V3(pverts[index].Normal, ref nrm);
+            }
+            if ((flags & ArcLndVertType.VertColor) > 0)
+            {
+                var billyColor = mdl.arcVertDataSetList[0].VertColorData[faceIds[i]];
+                pverts[index].Color[0] = billyColor[0];
+                pverts[index].Color[1] = billyColor[1];
+                pverts[index].Color[2] = billyColor[2];
+                pverts[index].Color[3] = billyColor[3];
+                i++;
+            }
+            if ((flags & ArcLndVertType.UV1) > 0)
+            {
+                var billyUv = mdl.arcVertDataSetList[0].UV1Data[faceIds[i]];
+                var uv = new Vector2((float)(billyUv[0] / 255.0), (float)(billyUv[1] / 255.0));
+                pverts[index].Uv1[0] = (short)(uv.X * 2048.0f);
+                pverts[index].Uv1[1] = (short)(uv.Y * 2048.0f);
+                i++;
+            }
+            FillBinormalBitangentSNorm8Zero(pverts[index].Binormal, pverts[index].Bitangent);
+        }
+
+        return index;
     }
 
     private unsafe void ProcessMesh(FLVER0.Mesh mesh, FlverSubmesh dest)
