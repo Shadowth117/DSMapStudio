@@ -11,7 +11,7 @@
     <Field Def="f32 hit1_Radius"></Field>
     <Field Def="f32 hit2_Radius"></Field>
     <Field Def="f32 hit3_Radius"></Field>
-    <Field Def="f32 knockbackDist"></Field>
+    <Field Def="f32 staggerKnockbackDist"></Field>
     <Field Def="f32 hitStopTime"></Field>
     <Field Def="s32 spEffectId0"></Field>
     <Field Def="s32 spEffectId1"></Field>
@@ -234,11 +234,18 @@
     <Field Def="u8 UnkFlag0x1DA_1:1"></Field>
     <Field Def="u8 UnkFlag0x1DA_2:1"></Field>
     <Field Def="u8 UnkFlag0x1DA_3:1"></Field>
-    <Field Def="u8 UnkFlag0x1DA_4:1"></Field>
+    <Field Def="u8 nonStaggerAttacksCauseKnockback:1"></Field>
     <Field Def="u8 UnkFlag0x1DA_5:1"></Field>
     <Field Def="u8 UnkFlag0x1DA_6:1"></Field>
     <Field Def="u8 weightAffectsDamage:1"></Field>
-    <Field Def="u8 UnkByte0x1DB"></Field>
+    <Field Def="u8 UnkFlag0x1DB_0:1"></Field>
+    <Field Def="u8 UnkFlag0x1DB_1:1"></Field>
+    <Field Def="u8 UnkFlag0x1DB_2:1"></Field>
+    <Field Def="u8 UnkFlag0x1DB_3:1"></Field>
+    <Field Def="u8 UnkFlag0x1DB_4:1"></Field>
+    <Field Def="u8 useImpactRate:1"></Field>
+    <Field Def="u8 UnkFlag0x1DB_6:1"></Field>
+    <Field Def="u8 UnkFlag0x1DB_7:1"></Field>
     <Field Def="u16 UnkUshort0x1DC"></Field>
     <Field Def="u8 Unk0x1DE"></Field>
     <Field Def="u8 wwise_ShootSeCategoryId"></Field>
@@ -464,7 +471,7 @@
     <Field Def="s32 sfxModelParamId">
       <Description>Refers to SfxModelParam.</Description>
     </Field>
-    <Field Def="f32 UnkFloat0x3E4"></Field>
+    <Field Def="f32 nonStaggerKnockbackDist"></Field>
     <Field Def="s32 padRumbleIdC">
       <Description>Refers to PadRumble.</Description>
     </Field>

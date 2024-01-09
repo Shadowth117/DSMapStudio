@@ -65,11 +65,12 @@ public class ParamRowEditor
         ImGui.Spacing();
     }
 
-    private void PropEditorParamRow_PinnedFields(List<string> pinnedFields, ParamBank bank, Param.Row row,
+    private void PropEditorParamRow_PinnedFields(List<string> pinList, ParamBank bank, Param.Row row,
         Param.Row vrow, List<(string, Param.Row)> auxRows, Param.Row crow, List<(PseudoColumn, Param.Column)> cols,
         List<(PseudoColumn, Param.Column)> vcols, List<List<(PseudoColumn, Param.Column)>> auxCols, ref int imguiId,
         string activeParam, ParamEditorSelectionState selection)
     {
+        List<string> pinnedFields = new List<string>(pinList);
         foreach (var field in pinnedFields)
         {
             List<(PseudoColumn, Param.Column)> matches =
@@ -320,8 +321,8 @@ public class ParamRowEditor
                 ImGui.SameLine();
             }
 
-            if (ImGui.Selectable("", false, ImGuiSelectableFlags.AllowItemOverlap)
-                || ImGui.IsItemClicked(ImGuiMouseButton.Right))
+            ImGui.Selectable("", false, ImGuiSelectableFlags.AllowItemOverlap);
+            if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
             {
                 ImGui.OpenPopup("ParamRowCommonMenu");
             }
@@ -613,93 +614,66 @@ public class ParamRowEditor
     {
         var scale = MapStudioNew.GetUIScale();
         var altName = cellMeta?.AltName;
-        var shownName = internalName;
 
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0f, 10f) * scale);
-        var nameText = internalName;
-        if (!string.IsNullOrWhiteSpace(altName))
-        {
-            nameText += $"  /  {altName}";
-        }
 
-        ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.4f, 1.0f), Utils.ImGuiEscape(nameText, "", true));
-        if (col.Def.BitSize != -1)
+        if (col != null)
         {
-            var str = $"Bitfield Type within: {propType.Name}";
-            var min = 0;
-            var max = (2ul << (col.Def.BitSize - 1)) - 1;
-            str += $" (Min {min}, Max {max})";
-            ImGui.TextColored(new Vector4(.4f, 1f, .7f, 1f), str);
-        }
-        else if (propType.IsValueType)
-        {
-            var str = $"Value Type: {propType.Name}";
-            var min = propType.GetField("MinValue")?.GetValue(propType);
-            var max = propType.GetField("MaxValue")?.GetValue(propType);
-            if (min != null && max != null)
+            EditorDecorations.ImGui_DisplayPropertyInfo(propType, internalName, altName, col.Def.ArrayLength, col.Def.BitSize);
+            if (Wiki != null)
             {
-                str += $" (Min {min}, Max {max})";
+                ImGui.TextColored(new Vector4(.4f, .7f, 1f, 1f), $"{Wiki}");
             }
-
-            ImGui.TextColored(new Vector4(.4f, 1f, .7f, 1f), str);
-        }
-        else if (propType.IsArray && col != null)
-        {
-            var str = $"Array Type: {propType.Name}";
-            var length = col.Def.ArrayLength;
-            if (length > 0)
+            else
             {
-                str += $" (Length: {length})";
+                ImGui.TextColored(new Vector4(1.0f, 1.0f, 1.0f, 0.7f),
+                    "Info regarding this field has not been written.");
             }
-
-            ImGui.TextColored(new Vector4(.4f, 1f, .7f, 1f), str);
-        }
-        else if (propType == typeof(string) && col != null)
-        {
-            var str = $"String Type: {propType.Name}";
-            var length = col.Def.ArrayLength;
-            if (length > 0)
-            {
-                str += $" (Length: {length})";
-            }
-
-            ImGui.TextColored(new Vector4(.4f, 1f, .7f, 1f), str);
-        }
-
-        ImGui.Separator();
-
-        if (Wiki != null)
-        {
-            ImGui.TextColored(new Vector4(.4f, .7f, 1f, 1f), $"{Wiki}");
         }
         else
         {
-            ImGui.TextColored(new Vector4(1.0f, 1.0f, 1.0f, 0.7f),
-                "Info regarding this field has not been written.");
+            // Headers
+            ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.4f, 1.0f), Utils.ImGuiEscape(internalName, "", true));
         }
 
         ImGui.Separator();
 
-        if (ImGui.MenuItem("Add to Searchbar"))
+        if (showPinOptions)
         {
-            EditorCommandQueue.AddCommand($@"param/search/prop {internalName.Replace(" ", "\\s")} ");
-        }
-
-        if (showPinOptions && ImGui.MenuItem(isPinned ? "Unpin " : "Pin " + shownName))
-        {
-            if (!_paramEditor._projectSettings.PinnedFields.ContainsKey(activeParam))
+            if (ImGui.MenuItem(isPinned ? "Unpin " : "Pin " + internalName))
             {
-                _paramEditor._projectSettings.PinnedFields.Add(activeParam, new List<string>());
-            }
+                if (!_paramEditor._projectSettings.PinnedFields.ContainsKey(activeParam))
+                {
+                    _paramEditor._projectSettings.PinnedFields.Add(activeParam, new List<string>());
+                }
 
-            List<string> pinned = _paramEditor._projectSettings.PinnedFields[activeParam];
+                List<string> pinned = _paramEditor._projectSettings.PinnedFields[activeParam];
+                if (isPinned)
+                {
+                    pinned.Remove(internalName);
+                }
+                else if (!pinned.Contains(internalName))
+                {
+                    pinned.Add(internalName);
+                }
+            }
             if (isPinned)
             {
-                pinned.Remove(internalName);
+                EditorDecorations.PinListReorderOptions(_paramEditor._projectSettings.PinnedFields[activeParam], internalName);
             }
-            else if (!pinned.Contains(internalName))
+            ImGui.Separator();
+        }
+
+        if (ImGui.MenuItem("Add to Searchbar"))
+        {
+            if (col != null)
             {
-                pinned.Add(internalName);
+                EditorCommandQueue.AddCommand($@"param/search/prop {internalName.Replace(" ", "\\s")} ");
+            }
+            else
+            {
+                // Headers
+                EditorCommandQueue.AddCommand($@"param/search/{internalName.Replace(" ", "\\s")} ");
             }
         }
 

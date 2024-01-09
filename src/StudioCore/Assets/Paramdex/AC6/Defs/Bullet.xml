@@ -70,7 +70,7 @@
     <Field Def="s8 damageDamp_Knockback"></Field>
     <Field Def="s8 shootAngleXZ"></Field>
     <Field Def="u8 lockShootLimitAng"></Field>
-    <Field Def="u8 UnkByte0xA2"></Field>
+    <Field Def="u8 chrPenetrateType"></Field>
     <Field Def="u8 prevVelocityDirRate"></Field>
     <Field Def="u8 atkAttribute"></Field>
     <Field Def="u8 spAttribute"></Field>
@@ -200,9 +200,9 @@
     <Field Def="s16 UnkShort0x1F4"></Field>
     <Field Def="s16 UnkShort0x1F6"></Field>
     <Field Def="f32 UnkFloat0x1F8"></Field>
-    <Field Def="f32 UnkFloat0x1FC"></Field>
+    <Field Def="f32 unkVelocityOverride0x1FC"></Field>
     <Field Def="f32 Unk0x200"></Field>
-    <Field Def="u16 UnkUshort0x204"></Field>
+    <Field Def="u16 intervalCreateShootMax"></Field>
     <Field Def="s16 UnkShort0x206"></Field>
     <Field Def="f32 Unk0x208"></Field>
     <Field Def="f32 Unk0x20C"></Field>
@@ -280,10 +280,10 @@
     <Field Def="s32 UnkInt0x2E4"></Field>
     <Field Def="f32 Unk0x2E8"></Field>
     <Field Def="f32 Unk0x2EC"></Field>
-    <Field Def="f32 UnkFloat0x2F0"></Field>
-    <Field Def="f32 UnkFloat0x2F4"></Field>
-    <Field Def="f32 UnkFloat0x2F8"></Field>
-    <Field Def="f32 UnkFloat0x2FC"></Field>
+    <Field Def="f32 recoilShootAngleHorizontalStart"></Field>
+    <Field Def="f32 recoilShootAngleHorizontalEnd"></Field>
+    <Field Def="f32 recoilShootAngleVerticalStart"></Field>
+    <Field Def="f32 recoilShootAngleVerticalEnd"></Field>
     <Field Def="s8 UnkSbyte0x300"></Field>
     <Field Def="s8 UnkSbyte0x301"></Field>
     <Field Def="s8 UnkSbyte0x302"></Field>
@@ -309,11 +309,18 @@
     <Field Def="s32 UnkInt0x340"></Field>
     <Field Def="s32 UnkInt0x344"></Field>
     <Field Def="f32 UnkFloat0x348"></Field>
-    <Field Def="s32 Unk0x34C"></Field>
-    <Field Def="s32 Unk0x350"></Field>
-    <Field Def="s32 Unk0x354"></Field>
-    <Field Def="s32 Unk0x358"></Field>
-    <Field Def="s32 Unk0x35C"></Field>
+    <Field Def="u8 homingType"></Field>
+    <Field Def="u8 Unk0x34D"></Field>
+    <Field Def="u16 Unk0x34E"></Field>
+    <Field Def="f32 Unk0x350"></Field>
+    <Field Def="f32 Unk0x354"></Field>
+    <Field Def="f32 Unk0x358"></Field>
+    <Field Def="f32 Unk0x35C"></Field>
     <Field Def="s32 Unk0x360"></Field>
+    <Field Def="s32 Unk0x364" FirstVersion="10500262"></Field>
+    <Field Def="s32 Unk0x368" FirstVersion="10500262"></Field>
+    <Field Def="s32 Unk0x36C" FirstVersion="10500262"></Field>
+    <Field Def="s32 Unk0x370" FirstVersion="10500262"></Field>
+    <Field Def="s32 Unk0x374" FirstVersion="10500262"></Field>
   </Fields>
 </PARAMDEF>

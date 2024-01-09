@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using SoulsFormats;
+using SoulsFormats.Util;
 using StudioCore.Scene;
 using System;
 using System.Collections.Generic;
@@ -162,7 +163,7 @@ public class ArrayPropertyCopyAction : Action
         }
     }
 
-    public ArrayPropertyCopyAction(Array source, List<Array> targetList)
+    public ArrayPropertyCopyAction(Array source, IEnumerable<Array> targetList)
     {
         foreach (Array target in targetList)
         {
@@ -234,7 +235,7 @@ public class MultipleEntityPropertyChangeAction : Action
         ChangedEnts = changedEnts;
         foreach (Entity o in changedEnts)
         {
-            var propObj = Utils.FindPropertyObject(prop, o.WrappedObject, classIndex);
+            var propObj = PropFinderUtil.FindPropertyObject(prop, o.WrappedObject, classIndex, false);
             var change = new PropertyChange
             {
                 ChangedObj = propObj, Property = prop, NewValue = newval, ArrayIndex = index

@@ -1,8 +1,9 @@
 ﻿using ImGuiNET;
+using SoulsFormats.Util;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Veldrid;
+using System.Reflection;
 
 namespace StudioCore.MsbEditor;
 
@@ -10,15 +11,37 @@ public class SearchProperties
 {
     private readonly Dictionary<string, List<WeakReference<Entity>>> FoundObjects = new();
     private readonly Universe Universe;
-    public string PropertyName = "";
-    private Type PropertyType;
+    private readonly PropertyCache _propCache;
 
-    private dynamic PropertyValue;
-    private bool ValidType;
+    public PropertyInfo Property
+    {
+        get => _property;
+        set
+        {
+            if (value != null)
+            {
+                _property = value;
+                PropertyType = value.PropertyType;
+            }
+            else
+            {
+                PropertyType = null;
+                ValidType = false;
+            }
+        }
+    }
 
-    public SearchProperties(Universe universe)
+    private PropertyInfo _property = null;
+    private Type PropertyType = null;
+    private dynamic PropertyValue = null;
+    private bool ValidType = false;
+    private bool _propSearchMatchNameOnly = true;
+    private string _propertyNameSearchString = "";
+
+    public SearchProperties(Universe universe, PropertyCache propCache)
     {
         Universe = universe;
+        _propCache = propCache;
     }
 
     public bool InitializeSearchValue(string initialValue = null)
@@ -36,7 +59,13 @@ public class SearchProperties
                 PropertyValue = byte.TryParse(initialValue, out var val) ? val : default;
                 return true;
             }
-
+            
+            if (PropertyType == typeof(sbyte) || PropertyType == typeof(sbyte[]))
+            {
+                PropertyValue = sbyte.TryParse(initialValue, out sbyte val) ? val : default;
+                return true;
+            }
+            
             if (PropertyType == typeof(char) || PropertyType == typeof(char[]))
             {
                 PropertyValue = char.TryParse(initialValue, out var val) ? val : default;
@@ -96,6 +125,12 @@ public class SearchProperties
                 PropertyValue = initialValue ?? "";
                 return true;
             }
+            
+            if (PropertyType.IsEnum)
+            {
+                PropertyValue = PropertyType.GetEnumValues().GetValue(0);
+                return true;
+            }
         }
 
         return false;
@@ -121,6 +156,15 @@ public class SearchProperties
             if (ImGui.InputInt("##valbyte", ref val) || searchFieldchanged)
             {
                 PropertyValue = (byte)val;
+                ret = true;
+            }
+        }
+        else if (PropertyType == typeof(sbyte) || PropertyType == typeof(sbyte[]))
+        {
+            int val = (int)PropertyValue;
+            if (ImGui.InputInt("##valsbyte", ref val) || searchFieldchanged == true)
+            {
+                PropertyValue = (sbyte)val;
                 ret = true;
             }
         }
@@ -214,6 +258,59 @@ public class SearchProperties
                 ret = true;
             }
         }
+        else if (PropertyType.IsEnum)
+        {
+            var enumVals = PropertyType.GetEnumValues();
+            var enumNames = PropertyType.GetEnumNames();
+            int[] intVals = new int[enumVals.Length];
+
+            if (searchFieldchanged == true)
+            {
+                ret = true;
+            }
+
+            if (PropertyType.GetEnumUnderlyingType() == typeof(byte))
+            {
+                for (var i = 0; i < enumVals.Length; i++)
+                    intVals[i] = (byte)enumVals.GetValue(i);
+
+                if (Utils.EnumEditor(enumVals, enumNames, PropertyValue, out object val, intVals))
+                {
+                    PropertyValue = val;
+                    ret = true;
+                }
+            }
+            else if (PropertyType.GetEnumUnderlyingType() == typeof(int))
+            {
+                for (var i = 0; i < enumVals.Length; i++)
+                    intVals[i] = (int)enumVals.GetValue(i);
+
+                if (Utils.EnumEditor(enumVals, enumNames, PropertyValue, out object val, intVals))
+                {
+                    PropertyValue = val;
+                    ret = true;
+                }
+            }
+            else if (PropertyType.GetEnumUnderlyingType() == typeof(uint))
+            {
+                for (var i = 0; i < enumVals.Length; i++)
+                    intVals[i] = (int)(uint)enumVals.GetValue(i);
+
+                if (Utils.EnumEditor(enumVals, enumNames, PropertyValue, out object val, intVals))
+                {
+                    PropertyValue = val;
+                    ret = true;
+                }
+            }
+            else
+            {
+                ImGui.Text("Enum underlying type not implemented");
+            }
+        }
+        else
+        {
+            ImGui.Text("Value type not implemented");
+        }
 
         ImGui.NextColumn();
         return ret;
@@ -221,51 +318,116 @@ public class SearchProperties
 
     public void OnGui(string[] propSearchCmd = null)
     {
-        var searchFieldChanged = false;
+        bool newSearch = false;
         var selectFirstResult = false;
-        if (propSearchCmd != null && propSearchCmd.Length > 0)
+        if (propSearchCmd != null)
         {
             ImGui.SetNextWindowFocus();
-            PropertyName = propSearchCmd[0];
-            PropertyType = Universe.GetPropertyType(PropertyName);
-            ValidType = InitializeSearchValue(propSearchCmd.Length > 1 ? propSearchCmd[1] : null);
-            searchFieldChanged = true;
+            ValidType = InitializeSearchValue();
+            newSearch = true;
             selectFirstResult = propSearchCmd.Contains("selectFirstResult");
-        }
-
-        if (InputTracker.GetKeyDown(KeyBindings.Current.Map_PropSearch))
-        {
-            ImGui.SetNextWindowFocus();
+            _propertyNameSearchString = "";
         }
 
         if (ImGui.Begin("Search Properties"))
         {
-            ImGui.Text($"Search Properties By Name <{KeyBindings.Current.Map_PropSearch.HintText}>");
+        
+            // propcache
+            var selection = Universe.Selection.GetSingleFilteredSelection<Entity>();
+            if (selection == null)
+            {
+                ImGui.Text("Select entity for dropdown list.");
+            }
+            else
+            {
+                ImGui.Spacing();
+                ImGui.Text($"Selected type: {selection.WrappedObject.GetType().Name}");
+
+                if (ImGui.BeginCombo("##SearchPropCombo", "Select property..."))
+                {
+                    var props = _propCache.GetCachedFields(selection.WrappedObject);
+                    foreach (var prop in props)
+                    {
+                        if (ImGui.Selectable(prop.Name))
+                        {
+                            Property = prop;
+                            ValidType = InitializeSearchValue();
+                            newSearch = true;
+                            _propertyNameSearchString = "";
+                            break;
+                        }
+                    }
+                    ImGui.EndCombo();
+                }
+            }
+
+            if (ImGui.Button("Help##PropSearchHelpMenu"))
+            {
+                ImGui.OpenPopup("##PropSearchHelpPopup");
+            }
+            if (ImGui.BeginPopup("##PropSearchHelpPopup"))
+            {
+                ImGui.Text($"To search through properties, you can:\nA. Type property name below.\nB. Select an entity, then right click a field in Property Editor or use dropdown menu below.");
+                ImGui.EndPopup();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Checkbox("Include properties with same name", ref _propSearchMatchNameOnly))
+            {
+                newSearch = true;
+            }
+
+            if (ImGui.InputText("Property Name", ref _propertyNameSearchString, 255))
+            {
+                Property = null;
+                PropertyType = null;
+
+                // Find the first property that matches the given name.
+                // Definitely replace this (along with everything else, really).
+                HashSet<Type> typeCache = new();
+                foreach (KeyValuePair<string, ObjectContainer> m in Universe.LoadedObjectContainers)
+                {
+                    if (m.Value == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (Entity o in m.Value.Objects)
+                    {
+                        Type typ = o.WrappedObject.GetType();
+                        if (typeCache.Contains(typ))
+                            continue;
+                        var prop = PropFinderUtil.FindProperty(_propertyNameSearchString, o.WrappedObject);
+                        if (prop != null)
+                        {
+                            Property = prop;
+                            ValidType = InitializeSearchValue();
+                            _propSearchMatchNameOnly = true;
+                            newSearch = true;
+                            goto end;
+                        }
+                        typeCache.Add(o.WrappedObject.GetType());
+                    }
+                }
+                end: ;
+            }
+
             ImGui.Separator();
             ImGui.Columns(2);
-            ImGui.Text("Property Name");
-            ImGui.NextColumn();
 
-            if (InputTracker.GetKeyDown(KeyBindings.Current.Map_PropSearch))
+            if (Property != null && ValidType)
             {
-                ImGui.SetKeyboardFocusHere();
-            }
+                ImGui.Text("Property Name");
+                ImGui.NextColumn();
+                ImGui.Text(Property.Name);
+                ImGui.NextColumn();
 
-            if (ImGui.InputText("##value", ref PropertyName, 64))
-            {
-                PropertyType = Universe.GetPropertyType(PropertyName);
-                ValidType = InitializeSearchValue();
-                searchFieldChanged = true;
-            }
-
-            ImGui.NextColumn();
-            if (PropertyType != null && ValidType)
-            {
                 ImGui.Text("Type");
                 ImGui.NextColumn();
                 ImGui.Text(PropertyType.Name);
                 ImGui.NextColumn();
-                if (SearchValue(searchFieldChanged))
+
+                if (SearchValue(newSearch))
                 {
                     FoundObjects.Clear();
                     foreach (ObjectContainer o in Universe.LoadedObjectContainers.Values)
@@ -281,34 +443,33 @@ public class SearchProperties
                             {
                                 if (ob is MapEntity e)
                                 {
+                                    var value = PropFinderUtil.FindPropertyValue(Property, ob.WrappedObject, _propSearchMatchNameOnly);
+
+                                    if (value == null)
+                                    {
+                                        // Object does not contain target property.
+                                        continue;
+                                    }
+
                                     if (PropertyType.IsArray)
                                     {
-                                        //search through objects to find field matches (field is an array)
-                                        dynamic pArray = ob.GetPropertyValue(PropertyName);
-                                        if (pArray != null)
+                                        // Property is an array, scan through each index for value matches.
+                                        foreach (var p in (Array)value)
                                         {
-                                            foreach (var p in pArray)
+                                            if (p != null && p.Equals(PropertyValue))
                                             {
-                                                if (p != null && p.Equals(PropertyValue))
+                                                if (!FoundObjects.ContainsKey(e.ContainingMap.Name))
                                                 {
-                                                    if (!FoundObjects.ContainsKey(e.ContainingMap.Name))
-                                                    {
-                                                        FoundObjects.Add(e.ContainingMap.Name,
-                                                            new List<WeakReference<Entity>>());
-                                                    }
-
-                                                    FoundObjects[e.ContainingMap.Name]
-                                                        .Add(new WeakReference<Entity>(e));
-                                                    break;
+                                                    FoundObjects.Add(e.ContainingMap.Name, new List<WeakReference<Entity>>());
                                                 }
+                                                FoundObjects[e.ContainingMap.Name].Add(new WeakReference<Entity>(e));
+                                                break;
                                             }
                                         }
                                     }
                                     else
                                     {
-                                        //search through objects to find field matches
-                                        var p = ob.GetPropertyValue(PropertyName);
-                                        if (p != null && p.Equals(PropertyValue))
+                                        if (value.Equals(PropertyValue))
                                         {
                                             if (!FoundObjects.ContainsKey(e.ContainingMap.Name))
                                             {
@@ -327,7 +488,7 @@ public class SearchProperties
             }
 
             ImGui.Columns(1);
-            if (FoundObjects.Count > 0 && ValidType)
+            if (FoundObjects.Count > 0)
             {
                 ImGui.Text("Search Results");
                 ImGui.Separator();
@@ -349,22 +510,14 @@ public class SearchProperties
                                     selectFirstResult = false;
                                 }
 
-                                // TODO: We may want to frame the result on double-click.
-                                // Is there a good way to use dependency inversion to handle selection/frame/goto together?
+                                bool itemFocused = ImGui.IsItemFocused();
+                                bool selected = false;
                                 if (ImGui.Selectable(obj.Name, Universe.Selection.GetSelection().Contains(obj),
                                         ImGuiSelectableFlags.AllowDoubleClick))
                                 {
-                                    if (InputTracker.GetKey(Key.ControlLeft) ||
-                                        InputTracker.GetKey(Key.ControlRight))
-                                    {
-                                        Universe.Selection.AddSelection(obj);
-                                    }
-                                    else
-                                    {
-                                        Universe.Selection.ClearSelection();
-                                        Universe.Selection.AddSelection(obj);
-                                    }
+                                    selected = true;
                                 }
+                                Utils.EntitySelectionHandler(Universe.Selection, obj, selected, itemFocused, f.Value);
                             }
                         }
 

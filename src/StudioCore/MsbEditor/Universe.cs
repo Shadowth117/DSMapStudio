@@ -369,11 +369,7 @@ public class Universe
             return mesh;
         }
 
-        if (_assetLocator.Type == GameType.ArmoredCoreVI)
-        {
-            //TODO AC6
-        }
-        else if (loadnav && _assetLocator.Type != GameType.DarkSoulsIISOTFS)
+        if (loadnav && _assetLocator.Type != GameType.DarkSoulsIISOTFS)
         {
             MeshRenderableProxy mesh = MeshRenderableProxy.MeshRenderableFromNVMResource(
                 _renderScene, asset.AssetVirtualPath, modelMarkerType);
@@ -620,11 +616,11 @@ public class Universe
     public bool LoadMap(string mapid, bool selectOnLoad = false)
     {
         if (_assetLocator.Type == GameType.DarkSoulsIISOTFS
-            && ParamBank.VanillaBank.Params == null)
+            && ParamBank.PrimaryBank.Params == null)
         {
             // ParamBank must be loaded for DS2 maps
-            TaskLogs.AddLog("Cannot load DS2 maps until params finish loading",
-                LogLevel.Warning);
+            TaskLogs.AddLog("Cannot load DS2 maps when params are not loaded.",
+                LogLevel.Warning, TaskLogs.LogPriority.High);
             return false;
         }
 
@@ -654,10 +650,6 @@ public class Universe
                 }
 
                 btl = BTL.Read(file.Bytes);
-            }
-            else if (_assetLocator.Type == GameType.ArmoredCoreVI)
-            {
-                throw new NotSupportedException("AC6 TODO: BTL");
             }
             else
             {
@@ -713,10 +705,9 @@ public class Universe
                     break;
                 case GameType.Sekiro:
                 case GameType.EldenRing:
+                case GameType.ArmoredCoreVI:
                     _dispGroupCount = 8; //?
                     break;
-                case GameType.ArmoredCoreVI:
-                //TODO AC6
                 default:
                     throw new Exception($"Error: Did not expect Gametype {_assetLocator.Type}");
                 //break;
@@ -743,8 +734,7 @@ public class Universe
             }
             else if (_assetLocator.Type == GameType.ArmoredCoreVI)
             {
-                //TODO AC6
-                return;
+                msb = MSB_AC6.Read(ad.AssetPath);
             }
             else if (_assetLocator.Type == GameType.DarkSoulsIISOTFS)
             {
@@ -805,10 +795,6 @@ public class Universe
                     asset = _assetLocator.GetMapCollisionModel(amapid,
                         _assetLocator.MapModelNameToAssetName(amapid, model.Name), false);
                     colsToLoad.Add(asset);
-                }
-                else if (_assetLocator.Type == GameType.ArmoredCoreVI)
-                {
-                    //TODO AC6
                 }
                 else if (model.Name.StartsWith("n") && _assetLocator.Type != GameType.DarkSoulsIISOTFS &&
                          _assetLocator.Type != GameType.Bloodborne)
@@ -1339,7 +1325,7 @@ public class Universe
 
         if (_assetLocator.Type == GameType.ArmoredCoreVI)
         {
-            //TODO AC6
+            return DCX.Type.DCX_DFLT_10000_44_9;
         }
         else if (_assetLocator.Type == GameType.DarkSoulsIISOTFS)
         {
@@ -1394,10 +1380,6 @@ public class Universe
                 }
             }
         }
-        else if (_assetLocator.Type == GameType.ArmoredCoreVI)
-        {
-            //TODO AC6
-        }
         else
         {
             for (var i = 0; i < BTLs.Count; i++)
@@ -1449,8 +1431,11 @@ public class Universe
             }
             else if (_assetLocator.Type == GameType.ArmoredCoreVI)
             {
-                //TODO AC6
-                return;
+                MSB_AC6 prev = MSB_AC6.Read(ad.AssetPath);
+                MSB_AC6 n = new();
+                n.Layers = prev.Layers;
+                n.Routes = prev.Routes;
+                msb = n;
             }
             else if (_assetLocator.Type == GameType.DarkSoulsIISOTFS)
             {
@@ -1618,28 +1603,5 @@ public class Universe
     public void LoadFlver(string name, FLVER2 flver)
     {
         ObjectContainer c = new(this, name);
-    }
-
-    public Type GetPropertyType(string name)
-    {
-        // TODO: needs to scan within structs too 
-        foreach (KeyValuePair<string, ObjectContainer> m in LoadedObjectContainers)
-        {
-            if (m.Value == null)
-            {
-                continue;
-            }
-
-            foreach (Entity o in m.Value.Objects)
-            {
-                PropertyInfo p = o.GetProperty(name);
-                if (p != null)
-                {
-                    return p.PropertyType;
-                }
-            }
-        }
-
-        return null;
     }
 }

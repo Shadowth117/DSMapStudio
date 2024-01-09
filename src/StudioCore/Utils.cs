@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Text;
@@ -289,7 +290,7 @@ public static class Utils
 
     public static string GetLocalAssetPath(AssetLocator assetLocator, string assetPath)
     {
-        if (assetPath.StartsWith(assetLocator.GameRootDirectory))
+        if (assetPath.StartsWith(assetLocator.GameModDirectory))
         {
             return assetPath.Replace(assetLocator.GameModDirectory, "");
         }
@@ -843,62 +844,24 @@ public static class Utils
         return str;
     }
 
-    /// <summary>
-    ///     Search an object's properties and return whichever object has the targeted property.
-    /// </summary>
-    /// <returns>Object that has the property, otherwise null.</returns>
-    public static object FindPropertyObject(PropertyInfo prop, object obj, int classIndex = -1)
+    public static bool EnumEditor(Array enumVals, string[] enumNames, object oldval, out object val, int[] intVals)
     {
-        foreach (PropertyInfo p in obj.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
-        {
-            if (p.MetadataToken == prop.MetadataToken)
-            {
-                return obj;
-            }
+        val = null;
 
-            if (p.PropertyType.IsNested)
-            {
-                var retObj = FindPropertyObject(prop, p.GetValue(obj), classIndex);
-                if (retObj != null)
-                {
-                    return retObj;
-                }
-            }
-            else if (p.PropertyType.IsArray)
-            {
-                Type pType = p.PropertyType.GetElementType();
-                if (pType.IsNested)
-                {
-                    var array = (Array)p.GetValue(obj);
-                    if (classIndex != -1)
-                    {
-                        var retObj = FindPropertyObject(prop, array.GetValue(classIndex), classIndex);
-                        if (retObj != null)
-                        {
-                            return retObj;
-                        }
-                    }
-                    else
-                    {
-                        foreach (var arrayObj in array)
-                        {
-                            var retObj = FindPropertyObject(prop, arrayObj, classIndex);
-                            if (retObj != null)
-                            {
-                                return retObj;
-                            }
-                        }
-                    }
-                }
-            }
+        for (var i = 0; i < enumNames.Length; i++)
+        {
+            enumNames[i] = $"{intVals[i]}: {enumNames[i]}";
         }
 
-        return null;
-    }
+        int index = Array.IndexOf(enumVals, oldval);
 
-    public static object GetPropertyValue(PropertyInfo prop, object obj)
-    {
-        return prop.GetValue(FindPropertyObject(prop, obj));
+        if (ImGui.Combo("##", ref index, enumNames, enumNames.Length))
+        {
+            val = enumVals.GetValue(index);
+            return true;
+        }
+
+        return false;
     }
 
     public static void ImGuiGenericHelpPopup(string buttonText, string imguiID, string displayText)
@@ -985,6 +948,138 @@ public static class Utils
     public static string ImGui_InputFloatFormat(float f)
     {
         var split = f.ToString("F6").TrimEnd('0').Split('.');
-        return $"%.{Math.Clamp(split[1].Length, 3, 6)}f";
+        return $"%.{Math.Clamp(split.Last().Length, 3, 6)}f";
+    }
+
+    /// <summary>
+    ///     Returns string representing version of param or regulation.
+    /// </summary>
+    public static string ParseParamVersion(ulong version)
+    {
+        string verStr = version.ToString();
+        if (verStr.Length == 7 || verStr.Length == 8)
+        {
+            char major = verStr[0];
+            string minor = verStr[1..3];
+            char patch = verStr[3];
+            string rev = verStr[4..];
+            return $"{major}.{minor}.{patch}.{rev}";
+        }
+
+        return "Unknown version format";
+    }
+
+    public static void EntitySelectionHandler(Selection selection, Entity entity,
+        bool itemSelected, bool isItemFocused, List<WeakReference<Entity>> filteredEntityList = null)
+    {
+        // Up/Down arrow mass selection
+        var arrowKeySelect = false;
+        if (isItemFocused && (InputTracker.GetKey(Key.Up) || InputTracker.GetKey(Key.Down)))
+        {
+            itemSelected = true;
+            arrowKeySelect = true;
+        }
+
+        if (itemSelected)
+        {
+            if (arrowKeySelect)
+            {
+                if (InputTracker.GetKey(Key.ControlLeft)
+                    || InputTracker.GetKey(Key.ControlRight)
+                    || InputTracker.GetKey(Key.ShiftLeft)
+                    || InputTracker.GetKey(Key.ShiftRight))
+                {
+                    selection.AddSelection(entity);
+                }
+                else
+                {
+                    selection.ClearSelection();
+                    selection.AddSelection(entity);
+                }
+            }
+            else if (InputTracker.GetKey(Key.ControlLeft) || InputTracker.GetKey(Key.ControlRight))
+            {
+                // Toggle Selection
+                if (selection.GetSelection().Contains(entity))
+                {
+                    selection.RemoveSelection(entity);
+                }
+                else
+                {
+                    selection.AddSelection(entity);
+                }
+            }
+            else if (selection.GetSelection().Count > 0
+                     && (InputTracker.GetKey(Key.ShiftLeft) || InputTracker.GetKey(Key.ShiftRight)))
+            {
+                // Select Range
+                List<Entity> entList;
+                if (filteredEntityList != null)
+                {
+                    entList = new();
+                    foreach (WeakReference<Entity> ent in filteredEntityList)
+                    {
+                        if (ent.TryGetTarget(out Entity e))
+                        {
+                            entList.Add(e);
+                        }
+                    }
+                }
+                else
+                {
+                    entList = entity.Container.Objects;
+                }
+
+                var i1 = entList.IndexOf(selection.GetFilteredSelection<MapEntity>()
+                    .FirstOrDefault(fe => fe.Container == entity.Container && fe != entity.Container.RootObject));
+                var i2 = entList.IndexOf((MapEntity)entity);
+
+                if (i1 != -1 && i2 != -1)
+                {
+                    var iStart = i1;
+                    var iEnd = i2;
+                    if (i2 < i1)
+                    {
+                        iStart = i2;
+                        iEnd = i1;
+                    }
+
+                    for (var i = iStart; i <= iEnd; i++)
+                    {
+                        selection.AddSelection(entList[i]);
+                    }
+                }
+                else
+                {
+                    selection.AddSelection(entity);
+                }
+            }
+            else
+            {
+                // Exclusive Selection
+                selection.ClearSelection();
+                selection.AddSelection(entity);
+            }
+        }
+    }
+
+    public static int ParseHexFromString(string str)
+    {
+        return int.Parse(str.Replace("0x", ""), System.Globalization.NumberStyles.HexNumber);
+    }
+
+    public static string ParseRegulationVersion(ulong version)
+    {
+        string verStr = version.ToString();
+        if (verStr.Length != 8)
+        {
+            return "Unknown Version";
+        }
+        char major = verStr[0];
+        string minor = verStr[1..3];
+        char patch = verStr[3];
+        string rev = verStr[4..];
+
+        return $"{major}.{minor}.{patch}.{rev}";
     }
 }

@@ -465,10 +465,6 @@ public partial class FlverResource : IResource, IDisposable
                 dest.SetHasIndexNoWeightTransform();
             }
         }
-        else if (type == GameType.ArmoredCoreVI)
-        {
-            //TODO AC6
-        }
 
         if (!CFG.Current.EnableTexturing)
         {
@@ -740,6 +736,11 @@ public partial class FlverResource : IResource, IDisposable
         {
             *n = FLVER.Vertex.ReadByteNormXYZ(br);
             nw = br.ReadByte();
+        }
+        else if (type == FLVER.LayoutType.ShortBoneIndices)
+        {
+            *n = FLVER.Vertex.ReadShortNormXYZ(br);
+            nw = br.ReadInt16();
         }
         else
         {
@@ -2323,9 +2324,9 @@ public partial class FlverResource : IResource, IDisposable
         // Parse header
         br.BigEndian = false;
         br.AssertASCII("FLVER\0");
-        br.BigEndian = br.AssertASCII("L\0", "B\0") == "B\0";
-        var version = br.AssertInt32(0x20005, 0x20009, 0x2000C, 0x2000D, 0x2000E, 0x2000F, 0x20010, 0x20013,
-            0x20014, 0x20016, 0x2001A);
+        br.BigEndian = br.AssertASCII(["L\0", "B\0"]) == "B\0";
+        var version = br.AssertInt32([0x20005, 0x20009, 0x2000C, 0x2000D, 0x2000E, 0x2000F, 0x20010, 0x20013,
+            0x20014, 0x20016, 0x2001A, 0x2001B]);
         var dataOffset = br.ReadUInt32();
         br.ReadInt32(); // Data length
         var dummyCount = br.ReadInt32();
@@ -2340,7 +2341,7 @@ public partial class FlverResource : IResource, IDisposable
 
         br.ReadInt32(); // Face count not including motion blur meshes or degenerate faces
         br.ReadInt32(); // Total face count
-        int vertexIndicesSize = br.AssertByte(0, 16, 32);
+        int vertexIndicesSize = br.AssertByte([0, 16, 32]);
         var unicode = br.ReadBoolean();
         br.ReadBoolean(); // unknown
         br.AssertByte(0);
@@ -2358,7 +2359,7 @@ public partial class FlverResource : IResource, IDisposable
         br.ReadInt32(); // unknown
         br.AssertInt32(0);
         br.AssertInt32(0);
-        br.AssertInt32(0);
+        br.AssertInt32([0x0, 0x10]);
         br.AssertInt32(0);
         br.AssertInt32(0);
 
@@ -2726,7 +2727,7 @@ public partial class FlverResource : IResource, IDisposable
 
         public FlverMesh(BinaryReaderEx br)
         {
-            dynamic = br.AssertInt32(0, 1);
+            dynamic = br.AssertInt32([0, 1]);
             materialIndex = br.ReadInt32();
             br.AssertInt32(0);
             br.AssertInt32(0);
@@ -2736,7 +2737,7 @@ public partial class FlverResource : IResource, IDisposable
             br.ReadInt32(); // bone offset
             facesetCount = br.ReadInt32();
             facesetIndicesOffset = br.ReadUInt32();
-            vertexBufferCount = br.AssertInt32(0, 1, 2, 3);
+            vertexBufferCount = br.AssertInt32([0, 1, 2, 3]);
             vertexBufferIndicesOffset = br.ReadUInt32();
         }
     }
@@ -2764,7 +2765,7 @@ public partial class FlverResource : IResource, IDisposable
             {
                 br.ReadInt32(); // Indices length
                 br.AssertInt32(0);
-                indexSize = br.AssertInt32(0, 16, 32);
+                indexSize = br.AssertInt32([0, 16, 32]);
                 br.AssertInt32(0);
             }
 

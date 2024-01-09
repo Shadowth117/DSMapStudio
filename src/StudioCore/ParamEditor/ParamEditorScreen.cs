@@ -153,6 +153,8 @@ public class ParamEditorScreen : EditorScreen
     private string _mEditCSVResult = "";
     private string _mEditRegexResult = "";
     private bool _paramUpgraderLoaded;
+    private bool _rowNameImporter_EmptyOnly = false;
+    private bool _rowNameImporter_VanillaOnly = true;
 
     internal ProjectSettings _projectSettings;
     private string _statisticPopupOutput = "";
@@ -447,48 +449,42 @@ public class ParamEditorScreen : EditorScreen
 
             if (ImGui.BeginMenu("Import row names"))
             {
+                ImGui.Checkbox("Only replace unmodified row names", ref _rowNameImporter_VanillaOnly);
+                if (_rowNameImporter_VanillaOnly)
+                {
+                    ImGui.BeginDisabled();
+                    ImGui.Checkbox("Only replace empty row names", ref _rowNameImporter_EmptyOnly);
+                    ImGui.EndDisabled();
+                }
+                else
+                {
+                    ImGui.Checkbox("Only replace empty row names", ref _rowNameImporter_EmptyOnly);
+                }
+
                 void ImportRowNames(bool currentParamOnly, string title)
                 {
                     const string importRowQuestion =
-                        "Would you like to replace row names with default names defined within DSMapStudio?\n\nSelect \"Yes\" to replace all names, \"No\" to only replace empty names, \"Cancel\" to abort.";
+                        "Would you like to replace row names with default names defined within DSMapStudio?";
                     var currentParam = currentParamOnly ? _activeView._selection.GetActiveParam() : null;
                     DialogResult question = PlatformUtils.Instance.MessageBox(importRowQuestion, title,
-                        MessageBoxButtons.YesNoCancel, MessageBoxIcon.Information);
-                    switch (question)
+                        MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
+                    if (question == DialogResult.OK)
                     {
-                        case DialogResult.Yes:
-                            EditorActionManager.ExecuteAction(
-                                ParamBank.PrimaryBank.LoadParamDefaultNames(currentParam));
-                            break;
-                        case DialogResult.No:
-                            EditorActionManager.ExecuteAction(
-                                ParamBank.PrimaryBank.LoadParamDefaultNames(currentParam, true));
-                            break;
+                        EditorActionManager.ExecuteAction(ParamBank.PrimaryBank.
+                            LoadParamDefaultNames(currentParam, _rowNameImporter_EmptyOnly, _rowNameImporter_VanillaOnly));
                     }
                 }
 
                 if (ImGui.MenuItem("All", "", false, ParamBank.PrimaryBank.Params != null))
                 {
-                    try
-                    {
-                        ImportRowNames(false, "Replace all row names?");
-                    }
-                    catch
-                    {
-                    }
+                    ImportRowNames(false, "Replace row names?");
                 }
 
                 if (ImGui.MenuItem("Current Param", "", false,
                         ParamBank.PrimaryBank.Params != null && _activeView._selection.ActiveParamExists()))
                 {
-                    try
-                    {
-                        ImportRowNames(true,
-                            $"Replace all row names in {_activeView._selection.GetActiveParam()}?");
-                    }
-                    catch
-                    {
-                    }
+                    ImportRowNames(true,
+                        $"Replace row names in {_activeView._selection.GetActiveParam()}?");
                 }
 
                 ImGui.EndMenu();
@@ -578,10 +574,10 @@ public class ParamEditorScreen : EditorScreen
                         ParamReloader.CanReloadMemoryParams(ParamBank.PrimaryBank, _projectSettings);
 
                     if (ImGui.MenuItem("Current Param", KeyBindings.Current.Param_HotReload.HintText, false,
-                            canHotReload))
+                            canHotReload && _activeView._selection.GetActiveParam() != null))
                     {
-                        ParamReloader.ReloadMemoryParams(ParamBank.PrimaryBank, ParamBank.PrimaryBank.AssetLocator,
-                            new[] { _activeView._selection.GetActiveParam() });
+                        ParamReloader.ReloadMemoryParam(ParamBank.PrimaryBank, ParamBank.PrimaryBank.AssetLocator,
+                            _activeView._selection.GetActiveParam());
                     }
 
                     if (ImGui.MenuItem("All Params", KeyBindings.Current.Param_HotReloadAll.HintText, false,
@@ -861,10 +857,11 @@ public class ParamEditorScreen : EditorScreen
                 ParamReloader.ReloadMemoryParams(ParamBank.PrimaryBank, ParamBank.PrimaryBank.AssetLocator,
                     ParamBank.PrimaryBank.Params.Keys.ToArray());
             }
-            else if (InputTracker.GetKeyDown(KeyBindings.Current.Param_HotReload))
+            else if (InputTracker.GetKeyDown(KeyBindings.Current.Param_HotReload) &&
+                _activeView._selection.GetActiveParam() != null)
             {
-                ParamReloader.ReloadMemoryParams(ParamBank.PrimaryBank, ParamBank.PrimaryBank.AssetLocator,
-                    new[] { _activeView._selection.GetActiveParam() });
+                ParamReloader.ReloadMemoryParam(ParamBank.PrimaryBank, ParamBank.PrimaryBank.AssetLocator,
+                    _activeView._selection.GetActiveParam());
             }
         }
 
@@ -893,6 +890,11 @@ public class ParamEditorScreen : EditorScreen
                 if (initcmd.Length > 2 && ParamBank.PrimaryBank.Params.ContainsKey(initcmd[2]))
                 {
                     doFocus = initcmd[0] == "select";
+                    if (!doFocus)
+                    {
+                        GotoSelectedRow = true;
+                    }
+
                     ParamEditorView viewToMofidy = _activeView;
                     if (initcmd[1].Equals("new"))
                     {
@@ -1208,17 +1210,13 @@ public class ParamEditorScreen : EditorScreen
                 ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.0f, 1f, 0f, 1.0f));
                 if (ImGui.Button("Upgrade Params"))
                 {
-                    DialogResult message = PlatformUtils.Instance.MessageBox(
-                        $@"Your mod is currently on regulation version {ParamBank.PrimaryBank.ParamVersion} while the game is on param version " +
-                        $"{ParamBank.VanillaBank.ParamVersion}.\n\nWould you like to attempt to upgrade your mod's params to be based on the " +
-                        "latest game version? Params will be upgraded by copying all rows that you modified to the new regulation, " +
-                        "overwriting exiting rows if needed.\n\nIf both you and the game update added a row with the same ID, the merge " +
-                        "will fail and there will be a log saying what rows you will need to manually change the ID of before trying " +
-                        "to merge again.\n\nIn order to perform this operation, you must specify the original regulation on the version " +
-                        $"that your current mod is based on (version {ParamBank.PrimaryBank.ParamVersion}).\n\nOnce done, the upgraded params will appear " +
-                        "in the param editor where you can view and save them. This operation is not undoable, but you can reload the project without " +
-                        "saving to revert to the un-upgraded params.\n\n" +
-                        "Would you like to continue?", "Regulation upgrade",
+                    string oldVersionString = Utils.ParseRegulationVersion(ParamBank.PrimaryBank.ParamVersion);
+                    string newVersionString = Utils.ParseRegulationVersion(ParamBank.VanillaBank.ParamVersion);
+                    var message = PlatformUtils.Instance.MessageBox(
+                            $"Project regulation.bin version appears to be out of date vs game folder regulation. Upgrading is recommended since the game will typically not load out of date regulation." +
+                            $"\n\nUpgrading requires you to select a VANILLA REGULATION.BIN WITH THE SAME VERSION AS YOUR MOD ({oldVersionString})" +
+                            $"\n\nWould you like to proceed?",
+                            $"Regulation upgrade {oldVersionString} -> {newVersionString}",
                         MessageBoxButtons.OKCancel,
                         MessageBoxIcon.Information);
                     if (message == DialogResult.OK)

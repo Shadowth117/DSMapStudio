@@ -36,6 +36,8 @@ public class MapStudioNew
     private static bool _firstframe = true;
     public static bool FirstFrame = true;
 
+    public static bool LowRequirementsMode;
+
     private readonly AssetLocator _assetLocator;
 
     private readonly IGraphicsContext _context;
@@ -133,7 +135,7 @@ public class MapStudioNew
                 {
                     try
                     {
-                        AttemptLoadProject(settings, CFG.Current.LastProjectFile, false);
+                        AttemptLoadProject(settings, CFG.Current.LastProjectFile);
                     }
                     catch
                     {
@@ -495,20 +497,13 @@ public class MapStudioNew
             return false;
         }
 
-        if (gameType is GameType.ArmoredCoreVI)
-        {
-            //TODO AC6
-            return false;
-        }
-
         TaskLogs.AddLog(
             $"The files for {gameType} do not appear to be fully unpacked. Functionality will be limited. Please use UXM selective unpacker to unpack game files",
             LogLevel.Warning);
         return true;
     }
 
-    private bool AttemptLoadProject(ProjectSettings settings, string filename, bool updateRecents = true,
-        NewProjectOptions options = null)
+    private bool AttemptLoadProject(ProjectSettings settings, string filename, NewProjectOptions options = null)
     {
         var success = true;
         // Check if game exe exists
@@ -581,21 +576,15 @@ public class MapStudioNew
 
             _projectSettings = settings;
             ChangeProjectSettings(_projectSettings, Path.GetDirectoryName(filename), options);
-            CFG.Current.LastProjectFile = filename;
             _context.Window.Title = $"{_programTitle}  -  {_projectSettings.ProjectName}";
 
-            if (updateRecents)
+            CFG.RecentProject recent = new()
             {
-                CFG.RecentProject recent = new();
-                recent.Name = _projectSettings.ProjectName;
-                recent.GameType = _projectSettings.GameType;
-                recent.ProjectFile = filename;
-                CFG.Current.RecentProjects.Insert(0, recent);
-                if (CFG.Current.RecentProjects.Count > CFG.MAX_RECENT_PROJECTS)
-                {
-                    CFG.Current.RecentProjects.RemoveAt(CFG.Current.RecentProjects.Count - 1);
-                }
-            }
+                Name = _projectSettings.ProjectName,
+                GameType = _projectSettings.GameType,
+                ProjectFile = filename
+            };
+            CFG.AddMostRecentProject(recent);
         }
 
         return success;
@@ -828,7 +817,7 @@ public class MapStudioNew
                                 ProjectSettings settings = ProjectSettings.Deserialize(p.ProjectFile);
                                 if (settings != null)
                                 {
-                                    if (AttemptLoadProject(settings, p.ProjectFile, false))
+                                    if (AttemptLoadProject(settings, p.ProjectFile))
                                     {
                                         recent = p;
                                     }
@@ -839,7 +828,7 @@ public class MapStudioNew
                                 TaskLogs.AddLog(
                                     $"Project.json at \"{p.ProjectFile}\" does not exist.\nRemoving project from recent projects list.",
                                     LogLevel.Warning, TaskLogs.LogPriority.High);
-                                CFG.Current.RecentProjects.Remove(p);
+                                CFG.RemoveRecentProject(p);
                                 CFG.Save();
                             }
                         }
@@ -848,7 +837,7 @@ public class MapStudioNew
                         {
                             if (ImGui.Selectable("Remove from list"))
                             {
-                                CFG.Current.RecentProjects.Remove(p);
+                                CFG.RemoveRecentProject(p);
                                 CFG.Save();
                             }
 
@@ -856,13 +845,6 @@ public class MapStudioNew
                         }
 
                         id++;
-                    }
-
-                    if (recent != null)
-                    {
-                        CFG.Current.RecentProjects.Remove(recent);
-                        CFG.Current.RecentProjects.Insert(0, recent);
-                        CFG.Current.LastProjectFile = recent.ProjectFile;
                     }
 
                     ImGui.EndMenu();
@@ -941,6 +923,11 @@ public class MapStudioNew
                     if (ImGui.MenuItem("MSBE read/write test"))
                     {
                         MSBReadWrite.Run(_assetLocator);
+                    }
+
+                    if (ImGui.MenuItem("MSB_AC6 Read/Write Test"))
+                    {
+                        MSB_AC6_Read_Write.Run(_assetLocator);
                     }
 
                     if (ImGui.MenuItem("BTL read/write test"))
@@ -1281,7 +1268,7 @@ public class MapStudioNew
                     _newProjectOptions.settings.GameRoot = gameroot;
                     _newProjectOptions.settings.Serialize($@"{_newProjectOptions.directory}\project.json");
                     AttemptLoadProject(_newProjectOptions.settings, $@"{_newProjectOptions.directory}\project.json",
-                        true, _newProjectOptions);
+                        _newProjectOptions);
 
                     ImGui.CloseCurrentPopup();
                 }

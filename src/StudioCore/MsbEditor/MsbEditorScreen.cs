@@ -1,4 +1,4 @@
-﻿using ImGuiNET;
+using ImGuiNET;
 using Microsoft.Extensions.Logging;
 using SoulsFormats;
 using StudioCore.Editor;
@@ -6,8 +6,10 @@ using StudioCore.Gui;
 using StudioCore.Platform;
 using StudioCore.Resource;
 using StudioCore.Scene;
+using StudioCore.Utilities;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using Veldrid;
@@ -49,6 +51,7 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
     public NavmeshEditor NavMeshEditor;
     public PropertyEditor PropEditor;
     public SearchProperties PropSearch;
+    private readonly PropertyCache _propCache = new();
 
     public Rectangle Rect;
     public RenderScene RenderScene;
@@ -86,9 +89,9 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
 
         SceneTree = new SceneTree(SceneTree.Configuration.MapEditor, this, "mapedittree", Universe, _selection,
             EditorActionManager, Viewport, AssetLocator);
-        PropEditor = new PropertyEditor(EditorActionManager);
+        PropEditor = new PropertyEditor(EditorActionManager, _propCache);
         DispGroupEditor = new DisplayGroupsEditor(RenderScene, _selection, EditorActionManager);
-        PropSearch = new SearchProperties(Universe);
+        PropSearch = new SearchProperties(Universe, _propCache);
         NavMeshEditor = new NavmeshEditor(locator, RenderScene, _selection);
 
         EditorActionManager.AddEventHandler(SceneTree);
@@ -562,6 +565,22 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
 
             ImGui.EndMenu();
         }
+
+        if (ImGui.BeginMenu("Tools"))
+        {
+            if (AssetLocator.Type is GameType.DemonsSouls or
+                GameType.DarkSoulsPTDE or GameType.DarkSoulsRemastered)
+            {
+                if (ImGui.BeginMenu("Regenerate MCP and MCG"))
+                {
+                    GenerateMCGMCP(Universe.LoadedObjectContainers);
+
+                    ImGui.EndMenu();
+                }
+            }
+
+            ImGui.EndMenu();
+        }
     }
 
     public void OnGUI(string[] initcmd)
@@ -761,6 +780,8 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
             if (initcmd[0] == "propsearch")
             {
                 propSearchCmd = initcmd.Skip(1).ToArray();
+                PropSearch.Property = PropEditor.RequestedSearchProperty;
+                PropEditor.RequestedSearchProperty = null;
             }
 
             // Support loading maps through commands.
@@ -1057,9 +1078,9 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
         List<Action> actlist = new();
         HashSet<Entity> sels = _selection.GetFilteredSelection<Entity>(o => o.HasTransform);
 
-        Vector3 camdir = Vector3.Transform(Vector3.UnitZ, Viewport.WorldView.CameraTransform.RotationMatrix);
-        Vector3 cam_pos = Viewport.WorldView.CameraTransform.Position;
-        Vector3 target_pos = cam_pos + (camdir * CFG.Current.Map_MoveSelectionToCamera_Radius);
+        Vector3 camDir = Vector3.Transform(Vector3.UnitZ, Viewport.WorldView.CameraTransform.RotationMatrix);
+        Vector3 camPos = Viewport.WorldView.CameraTransform.Position;
+        Vector3 targetCamPos = camPos + (camDir * CFG.Current.Map_MoveSelectionToCamera_Radius);
 
         // Get the accumulated center position of all selections
         Vector3 accumPos = Vector3.Zero;
@@ -1082,20 +1103,22 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
         // Offset selection positions to place accumulated center in front of camera
         foreach (Entity sel in sels)
         {
-            Vector3 new_pos = target_pos;
-            Vector3 relativePos = centerT.Position - sel.GetRootLocalTransform().Position;
-            Vector3 rot = sel.GetRootTransform().EulerRotation;
+            Transform localT = sel.GetLocalTransform();
+            Transform rootT = sel.GetRootTransform();
+            
+            // Get new localized position by applying reversed root offsets to target camera position.  
+            Vector3 newPos = Vector3.Transform(targetCamPos, Quaternion.Inverse(rootT.Rotation)) 
+                             - Vector3.Transform(rootT.Position, Quaternion.Inverse(rootT.Rotation));
+            
+            // Offset from center of multiple selections.
+            Vector3 localCenter = Vector3.Transform(centerT.Position, Quaternion.Inverse(rootT.Rotation))
+                                      - Vector3.Transform(rootT.Position, Quaternion.Inverse(rootT.Rotation));
+            Vector3 offsetFromCenter = localCenter - localT.Position;
+            newPos -= offsetFromCenter;
+            
+            Transform newT = new(newPos, localT.EulerRotation);
 
-            // Offset the new position by the map's offset from the origin.
-            var node = (TransformNode)sel.Container.RootObject.WrappedObject;
-            new_pos -= node.Position;
-
-            // Offset position from center of every selected entity to maintain relative positions
-            new_pos -= relativePos;
-
-            Transform newPos = new(new_pos, rot);
-
-            actlist.Add(sel.GetUpdateTransformAction(newPos));
+            actlist.Add(sel.GetUpdateTransformAction(newT));
         }
 
         if (actlist.Any())
@@ -1203,7 +1226,8 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
                 msbclass = typeof(MSBE);
                 break;
             case GameType.ArmoredCoreVI:
-            //TODO AC6
+                msbclass = typeof(MSB_AC6);
+                break;
             default:
                 throw new ArgumentException("type must be valid");
         }
@@ -1315,7 +1339,8 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
                 msbclass = typeof(MSBE);
                 break;
             case GameType.ArmoredCoreVI:
-            //TODO AC6
+                msbclass = typeof(MSB_AC6);
+                break;
             default:
                 throw new ArgumentException("type must be valid");
         }
@@ -1348,10 +1373,7 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
         GC.Collect();
         Universe.PopulateMapList();
 
-        if (AssetLocator.Type == GameType.ArmoredCoreVI)
-        {
-            //TODO AC6
-        } else if(AssetLocator.Type is GameType.BillyHatcherPC or GameType.BillyHatcherGC)
+        if(AssetLocator.Type is GameType.BillyHatcherPC or GameType.BillyHatcherGC)
         {
 
         }
@@ -1397,6 +1419,64 @@ public class MsbEditorScreen : EditorScreen, SceneTreeEventHandler
         {
             TaskLogs.AddLog(e.Message,
                 LogLevel.Error, TaskLogs.LogPriority.High, e.Wrapped);
+        }
+    }
+
+    private void GenerateMCGMCP(Dictionary<string, ObjectContainer> orderedMaps)
+    {
+        if (ImGui.BeginCombo("Regenerate MCP and MCG", "Maps"))
+        {
+            HashSet<string> idCache = new();
+            foreach (var map in orderedMaps)
+            {
+                string mapid = map.Key;
+                if (AssetLocator.Type is GameType.DemonsSouls)
+                {
+                    if (mapid != "m03_01_00_99" && !mapid.StartsWith("m99"))
+                    {
+                        var areaId = mapid.Substring(0, 3);
+                        if (idCache.Contains(areaId))
+                            continue;
+                        idCache.Add(areaId);
+
+                        if (ImGui.Selectable($"{areaId}"))
+                        {
+                            List<string> areaDirectories = new List<string>();
+                            foreach (var orderMap in orderedMaps)
+                            {
+                                if (orderMap.Key.StartsWith(areaId) && orderMap.Key != "m03_01_00_99")
+                                {
+                                    areaDirectories.Add(Path.Combine(AssetLocator.GameRootDirectory, "map", orderMap.Key));
+                                }
+                            }
+                            SoulsMapMetadataGenerator.GenerateMCGMCP(areaDirectories, AssetLocator, toBigEndian: true);
+                        }
+                    }
+                    else
+                    {
+                        if (ImGui.Selectable($"{mapid}"))
+                        {
+                            List<string> areaDirectories = new List<string>
+                            {
+                                Path.Combine(AssetLocator.GameRootDirectory, "map", mapid)
+                            };
+                            SoulsMapMetadataGenerator.GenerateMCGMCP(areaDirectories, AssetLocator, toBigEndian: true);
+                        }
+                    }
+                }
+                else if (AssetLocator.Type is GameType.DarkSoulsPTDE or GameType.DarkSoulsRemastered)
+                {
+                    if (ImGui.Selectable($"{mapid}"))
+                    {
+                        List<string> areaDirectories = new List<string>
+                        {
+                            Path.Combine(AssetLocator.GameRootDirectory, "map", mapid)
+                        };
+                        SoulsMapMetadataGenerator.GenerateMCGMCP(areaDirectories, AssetLocator, toBigEndian: false);
+                    }
+                }
+            }
+            ImGui.EndCombo();
         }
     }
 }

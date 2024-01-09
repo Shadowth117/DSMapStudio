@@ -232,7 +232,7 @@ public class ParamBank
         }
     }
 
-    public CompoundAction LoadParamDefaultNames(string param = null, bool onlyAffectEmptyNames = false)
+    public CompoundAction LoadParamDefaultNames(string param = null, bool onlyAffectEmptyNames = false, bool onlyAffectVanillaNames = false)
     {
         var dir = AssetLocator.GetParamNamesDir();
         var files = param == null
@@ -249,7 +249,7 @@ public class ParamBank
 
             var names = File.ReadAllText(f);
             (var result, CompoundAction action) =
-                ParamIO.ApplySingleCSV(this, names, fName, "Name", ' ', true, onlyAffectEmptyNames);
+                ParamIO.ApplySingleCSV(this, names, fName, "Name", ' ', true, onlyAffectEmptyNames, onlyAffectVanillaNames);
             if (action == null)
             {
                 TaskLogs.AddLog($"Could not apply name files for {fName}",
@@ -310,7 +310,8 @@ public class ParamBank
                             _usedTentativeParamTypes.Add(paramName, p.ParamType);
                             p.ParamType = newParamType;
                             TaskLogs.AddLog(
-                                $"Couldn't find ParamDef for {paramName}, but tentative ParamType \"{newParamType}\" exists.");
+                                $"Couldn't find ParamDef for {paramName}, but tentative ParamType \"{newParamType}\" exists.",
+                                LogLevel.Debug);
                         }
                         else
                         {
@@ -328,7 +329,8 @@ public class ParamBank
                         _usedTentativeParamTypes.Add(paramName, p.ParamType);
                         p.ParamType = newParamType;
                         TaskLogs.AddLog(
-                            $"Couldn't read ParamType for {paramName}, but tentative ParamType \"{newParamType}\" exists.");
+                            $"Couldn't read ParamType for {paramName}, but tentative ParamType \"{newParamType}\" exists.",
+                            LogLevel.Debug);
                     }
                     else
                     {
@@ -2170,7 +2172,11 @@ public class ParamBank
         if (!File.Exists(oldVanillaParamPath))
         {
             return ParamUpgradeResult.OldRegulationNotFound;
-        }
+        }    
+        
+        // Backup modded params
+        string modRegulationPath = $@"{AssetLocator.GameModDirectory}\regulation.bin";
+        File.Copy(modRegulationPath, $@"{modRegulationPath}.upgrade.bak", true);
 
         // Load old vanilla regulation
         BND4 oldVanillaParamBnd;

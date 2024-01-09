@@ -18,7 +18,7 @@ public class PropertyEditor
 {
     private readonly string[] _lightTypes = { "Spot", "Directional", "Point" };
 
-    private readonly Dictionary<string, PropertyInfo[]> _propCache = new();
+    private readonly PropertyCache _propCache;
 
     private readonly string[] _regionShapes =
     {
@@ -30,10 +30,12 @@ public class PropertyEditor
     private Action _lastUncommittedAction;
 
     public ActionManager ContextActionManager;
+    public PropertyInfo RequestedSearchProperty = null;
 
-    public PropertyEditor(ActionManager manager)
+    public PropertyEditor(ActionManager manager, PropertyCache propCache)
     {
         ContextActionManager = manager;
+        _propCache = propCache;
     }
 
     private (bool, bool) PropertyRow(Type typ, object oldval, out object newval, PropertyInfo prop)
@@ -204,7 +206,7 @@ public class PropertyEditor
                     intVals[i] = (byte)enumVals.GetValue(i);
                 }
 
-                if (EnumEditor(enumVals, enumNames, oldval, out var val, intVals))
+                if (Utils.EnumEditor(enumVals, enumNames, oldval, out var val, intVals))
                 {
                     newval = val;
                     isChanged = true;
@@ -217,7 +219,7 @@ public class PropertyEditor
                     intVals[i] = (int)enumVals.GetValue(i);
                 }
 
-                if (EnumEditor(enumVals, enumNames, oldval, out var val, intVals))
+                if (Utils.EnumEditor(enumVals, enumNames, oldval, out var val, intVals))
                 {
                     newval = val;
                     isChanged = true;
@@ -230,7 +232,7 @@ public class PropertyEditor
                     intVals[i] = (int)(uint)enumVals.GetValue(i);
                 }
 
-                if (EnumEditor(enumVals, enumNames, oldval, out var val, intVals))
+                if (Utils.EnumEditor(enumVals, enumNames, oldval, out var val, intVals))
                 {
                     newval = val;
                     isChanged = true;
@@ -296,44 +298,7 @@ public class PropertyEditor
 
         var isDeactivatedAfterEdit = ImGui.IsItemDeactivatedAfterEdit() || !ImGui.IsAnyItemActive();
 
-        // Tooltip
-        if (ImGui.IsItemHovered(ImGuiHoveredFlags.DelayNormal | ImGuiHoveredFlags.NoSharedDelay))
-        {
-            var str = $"Value Type: {typ.Name}";
-            if (typ.IsValueType)
-            {
-                var min = typ.GetField("MinValue")?.GetValue(typ);
-                var max = typ.GetField("MaxValue")?.GetValue(typ);
-                if ((min != null) & (max != null))
-                {
-                    str += $" (Min {min}, Max {max})";
-                }
-            }
-
-            ImGui.SetTooltip(str);
-        }
-
         return (isChanged, isDeactivatedAfterEdit);
-    }
-
-
-    private bool EnumEditor(Array enumVals, string[] enumNames, object oldval, out object val, int[] intVals)
-    {
-        val = null;
-
-        for (var i = 0; i < enumNames.Length; i++)
-        {
-            enumNames[i] = $"{intVals[i]}: {enumNames[i]}";
-        }
-
-        var index = Array.IndexOf(enumVals, oldval);
-        if (ImGui.Combo("", ref index, enumNames, enumNames.Length))
-        {
-            val = enumVals.GetValue(index);
-            return true;
-        }
-
-        return false;
     }
 
     private void UpdateProperty(object prop, Entity selection, object obj, object newval,
@@ -585,14 +550,37 @@ public class PropertyEditor
         id++;
     }
 
-
-    private void PropertyContextMenu(object obj, PropertyInfo propinfo)
+    /// <summary>
+    /// Overlays ImGui selectable over prop name text for use as a selectable.
+    /// </summary>
+    private static void PropContextRowOpener()
     {
-        if (ImGui.BeginPopupContextItem(propinfo.Name))
+        ImGui.Selectable("", false, ImGuiSelectableFlags.AllowItemOverlap);
+        ImGui.SameLine();
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
         {
-            if (ImGui.Selectable(@"Search"))
+            ImGui.OpenPopup("MsbPropContextMenu");
+        }
+    }
+
+    /// <summary>
+    /// Displays property context menu.
+    /// </summary>
+    private void DisplayPropContextMenu(PropertyInfo prop, object obj)
+    {
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+        {
+            ImGui.OpenPopup("MsbPropContextMenu");
+        }
+
+        if (ImGui.BeginPopup("MsbPropContextMenu"))
+        {
+            EditorDecorations.ImGui_DisplayPropertyInfo(prop);
+
+            if (ImGui.Selectable(@"Search##PropSearch"))
             {
-                EditorCommandQueue.AddCommand($@"map/propsearch/{propinfo.Name}");
+                RequestedSearchProperty = prop;
+                EditorCommandQueue.AddCommand($@"map/propsearch/{prop.Name}");
             }
 
             ImGui.EndPopup();
@@ -616,9 +604,16 @@ public class PropertyEditor
             ImGui.NextColumn();
             EditorDecorations.ParamRefsSelectables(ParamBank.PrimaryBank, refs, null, val);
             EditorDecorations.ParamRefEnumQuickLink(ParamBank.PrimaryBank, val, refs, null, null, null);
-            var opened = EditorDecorations.ParamRefEnumContextMenuItems(ParamBank.PrimaryBank, val, ref newObj,
-                refs, null, null, null, null);
-            return opened;
+
+            if (ImGui.BeginPopupContextItem($"{propinfo.Name}EnumContextMenu"))
+            {
+                EditorDecorations.ImGui_DisplayPropertyInfo(propinfo);
+
+                var opened = EditorDecorations.ParamRefEnumContextMenuItems(ParamBank.PrimaryBank, val, ref newObj,
+                    refs, null, null, null, null);
+                ImGui.EndPopup();
+                return opened;
+            }
         }
 
         return false;
@@ -642,14 +637,8 @@ public class PropertyEditor
         Entity firstEnt = entSelection.First();
         var obj = target == null ? firstEnt.WrappedObject : target;
         Type type = obj.GetType();
-        if (!_propCache.ContainsKey(type.FullName))
-        {
-            PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
-            props = props.OrderBy(p => p.MetadataToken).ToArray();
-            _propCache.Add(type.FullName, props);
-        }
 
-        PropertyInfo[] properties = _propCache[type.FullName];
+        PropertyInfo[] properties = _propCache.GetCachedProperties(type);
 
         if (decorate)
         {
@@ -718,6 +707,7 @@ public class PropertyEditor
                         }
                         else
                         {
+                            PropContextRowOpener();
                             ImGui.Text($@"{prop.Name}[{i}]");
                             ImGui.NextColumn();
                             ImGui.SetNextItemWidth(-1);
@@ -729,7 +719,7 @@ public class PropertyEditor
                                 PropertyRow(typ.GetElementType(), oldval, out newval, prop);
                             var changed = propEditResults.Item1;
                             var committed = propEditResults.Item2;
-                            PropertyContextMenu(obj, prop);
+                            DisplayPropContextMenu(prop, obj);
                             if (ImGui.IsItemActive() && !ImGui.IsWindowFocused())
                             {
                                 ImGui.SetItemDefaultFocus();
@@ -778,6 +768,7 @@ public class PropertyEditor
                         }
                         else
                         {
+                            PropContextRowOpener();
                             ImGui.Text($@"{prop.Name}[{i}]");
                             ImGui.NextColumn();
                             ImGui.SetNextItemWidth(-1);
@@ -788,7 +779,7 @@ public class PropertyEditor
                             (bool, bool) propEditResults = PropertyRow(arrtyp, oldval, out newval, prop);
                             var changed = propEditResults.Item1;
                             var committed = propEditResults.Item2;
-                            PropertyContextMenu(obj, prop);
+                            DisplayPropContextMenu(prop, obj);
                             if (ImGui.IsItemActive() && !ImGui.IsWindowFocused())
                             {
                                 ImGui.SetItemDefaultFocus();
@@ -949,6 +940,7 @@ public class PropertyEditor
                 }
                 else
                 {
+                    PropContextRowOpener();
                     ImGui.Text(prop.Name);
                     ImGui.NextColumn();
                     ImGui.SetNextItemWidth(-1);
@@ -959,7 +951,7 @@ public class PropertyEditor
                     (bool, bool) propEditResults = PropertyRow(typ, oldval, out newval, prop);
                     var changed = propEditResults.Item1;
                     var committed = propEditResults.Item2;
-                    PropertyContextMenu(obj, prop);
+                    DisplayPropContextMenu(prop, obj);
                     if (ImGui.IsItemActive() && !ImGui.IsWindowFocused())
                     {
                         ImGui.SetItemDefaultFocus();

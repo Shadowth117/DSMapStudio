@@ -42,6 +42,26 @@ public class ParamEditorView
 
     private void ParamView_ParamList_Header(bool isActiveView)
     {
+        if (ParamBank.PrimaryBank.ParamVersion != 0)
+        {
+            ImGui.Text($"Param version {Utils.ParseParamVersion(ParamBank.PrimaryBank.ParamVersion)}");
+
+            if (_paramEditor.ParamUpgradeVersionSoftWhitelist != 0)
+            {
+                if (ParamBank.PrimaryBank.ParamVersion < ParamBank.VanillaBank.ParamVersion
+                    || _paramEditor.ParamUpgradeVersionSoftWhitelist > ParamBank.PrimaryBank.ParamVersion)
+                {
+                    ImGui.SameLine();
+                    ImGui.Text("(out of date)");
+                }
+                else if (_paramEditor.ParamUpgradeVersionSoftWhitelist < ParamBank.PrimaryBank.ParamVersion)
+                {
+                    ImGui.SameLine();
+                    ImGui.Text("(unsupported version)");
+                }
+            }
+        }
+
         if (isActiveView && InputTracker.GetKeyDown(KeyBindings.Current.Param_SearchParam))
         {
             ImGui.SetKeyboardFocusHere();
@@ -121,6 +141,7 @@ public class ParamEditorView
                     {
                         _paramEditor._projectSettings.PinnedParams.Remove(paramKey);
                     }
+                    EditorDecorations.PinListReorderOptions(_paramEditor._projectSettings.PinnedParams, paramKey);
 
                     ImGui.EndPopup();
                 }
@@ -571,7 +592,12 @@ public class ParamEditorView
 
         if (_paramEditor.GotoSelectedRow && !isPinned)
         {
-            if (_selection.GetActiveRow().ID == r.ID)
+            var activeRow = _selection.GetActiveRow();
+            if (activeRow == null)
+            {
+                _paramEditor.GotoSelectedRow = false;
+            }
+            else if (activeRow.ID == r.ID)
             {
                 ImGui.SetScrollHereY();
                 _paramEditor.GotoSelectedRow = false;
@@ -666,11 +692,6 @@ public class ParamEditorView
                 ImGui.Separator();
             }
 
-            if (decorator != null)
-            {
-                decorator.DecorateContextMenuItems(r);
-            }
-
             if (ImGui.Selectable((isPinned ? "Unpin " : "Pin ") + r.ID))
             {
                 if (!_paramEditor._projectSettings.PinnedRows.ContainsKey(activeParam))
@@ -687,6 +708,16 @@ public class ParamEditorView
                 {
                     pinned.Add(r.ID);
                 }
+            }
+            if (isPinned)
+            {
+                EditorDecorations.PinListReorderOptions(_paramEditor._projectSettings.PinnedRows[activeParam], r.ID);
+            }
+            ImGui.Separator();
+
+            if (decorator != null)
+            {
+                decorator.DecorateContextMenuItems(r);
             }
 
             if (ImGui.Selectable("Compare..."))
