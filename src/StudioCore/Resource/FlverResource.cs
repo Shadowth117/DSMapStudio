@@ -1,6 +1,6 @@
 ﻿#nullable enable
-using AquaModelLibrary.Extra.Ninja.BillyHatcher;
-using AquaModelLibrary.Extra.Ninja.BillyHatcher.LNDH;
+using AquaModelLibrary.Data.BillyHatcher;
+using AquaModelLibrary.Data.BillyHatcher.LNDH;
 using DotNext.IO.MemoryMappedFiles;
 using Microsoft.AspNetCore.Identity;
 using SoulsFormats;
@@ -53,13 +53,6 @@ public partial class FlverResource : IResource, IDisposable
         get
         {
             long total = 0;
-            lock (CacheLock)
-            {
-                foreach (FlverCache c in FlverCaches)
-                {
-                    total += c.MemoryUsage;
-                }
-            }
 
             return total;
         }
@@ -107,10 +100,10 @@ public partial class FlverResource : IResource, IDisposable
             }
             else
             {
-                FlverCache? cache = al == AccessLevel.AccessGPUOptimizedOnly ? GetCache() : null;
-                Flver = FLVER2.Read(bytes, cache);
+                //FlverCache? cache = al == AccessLevel.AccessGPUOptimizedOnly ? GetCache() : null;
+                Flver = FLVER2.Read(bytes);
                 ret = LoadInternal(al, type);
-                ReleaseCache(cache);
+                //ReleaseCache(cache);
             }
         }
 
@@ -146,62 +139,22 @@ public partial class FlverResource : IResource, IDisposable
             if (al == AccessLevel.AccessGPUOptimizedOnly && type != GameType.DarkSoulsRemastered &&
                 type != GameType.DarkSoulsPTDE)
             {
-                using var file =
-                    MemoryMappedFile.CreateFromFile(path, System.IO.FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-                using IMappedMemoryOwner accessor = file.CreateMemoryAccessor(0, 0, MemoryMappedFileAccess.Read);
-                BinaryReaderEx br = new(false, accessor.Memory);
+                BinaryReaderEx br = new(false, File.ReadAllBytes(path));
                 DCX.Type ctype;
                 br = SFUtil.GetDecompressedBR(br, out ctype);
                 ret = LoadInternalFast(br, type);
             }
             else
             {
-                FlverCache? cache = al == AccessLevel.AccessGPUOptimizedOnly ? GetCache() : null;
-                Flver = FLVER2.Read(path, cache);
+                //FlverCache? cache = al == AccessLevel.AccessGPUOptimizedOnly ? GetCache() : null;
+                Flver = FLVER2.Read(path);
                 ret = LoadInternal(al, type);
-                ReleaseCache(cache);
+                //ReleaseCache(cache);
             }
         }
 
         return ret;
     }
-
-    private FlverCache GetCache()
-    {
-        lock (CacheLock)
-        {
-            if (FlverCaches.Count > 0)
-            {
-                return FlverCaches.Pop();
-            }
-
-            CacheCount++;
-        }
-
-        return new FlverCache();
-    }
-
-    private void ReleaseCache(FlverCache cache)
-    {
-        if (cache != null)
-        {
-            cache.ResetUsage();
-            lock (CacheLock)
-            {
-                FlverCaches.Push(cache);
-            }
-        }
-    }
-
-    public static void PurgeCaches()
-    {
-        FlverCaches.Clear();
-        //VerticesPool = ArrayPool<FlverLayout>.Create();
-        //GC.Collect();
-        //GC.WaitForPendingFinalizers();
-        //GC.Collect();
-    }
-
     private string TexturePathToVirtual(string texpath)
     {
         if (texpath.Contains(@"\map\"))

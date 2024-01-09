@@ -44,11 +44,8 @@ public class HavokNavmeshResource : IResource, IDisposable
 
     public bool _Load(string path, AccessLevel al, GameType type)
     {
-        using var file =
-            MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using IMappedMemoryOwner accessor = file.CreateMemoryAccessor(0, 0, MemoryMappedFileAccess.Read);
         var des = new PackFileDeserializer();
-        HkxRoot = (hkRootLevelContainer)des.Deserialize(new BinaryReaderEx(false, accessor.Memory));
+        HkxRoot = (hkRootLevelContainer)des.Deserialize(new BinaryReaderEx(false, File.ReadAllBytes(path)));
 
         return LoadInternal(al);
     }

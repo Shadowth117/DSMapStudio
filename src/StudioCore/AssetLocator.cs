@@ -1,4 +1,4 @@
-using AquaModelLibrary.Extra.Ninja.BillyHatcher;
+using AquaModelLibrary.Data.BillyHatcher;
 using SoulsFormats;
 using StudioCore.Editor;
 using System;

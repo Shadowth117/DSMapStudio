@@ -1,4 +1,5 @@
-﻿using AquaModelLibrary.Extra.Ninja.BillyHatcher;
+﻿using AquaModelLibrary.Data.BillyHatcher;
+using ArchiveLib;
 using ImGuiNET;
 using Microsoft.Extensions.Logging;
 using SoulsFormats;
@@ -132,13 +133,13 @@ public static class ResourceManager
                         {
                             var lnd = new LND(f.ToArray());
                             //Load GVM through Puyo
-                            if(lnd.gvmBytes != null)
+                            if(lnd.gvm != null)
                             {
-                                //TODO
+
                                 /*
-                                action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, p.Item2, lnd.gvmBytes,
+                                action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, p.Item2, Puyo2TPF.PuyoFile2TPF(lnd.gvm),
                                     action.AccessLevel, Locator.Type));
-                                i++
+                                i++;
                                 */
                             }
                         }
@@ -156,10 +157,10 @@ public static class ResourceManager
                 {
                     if (Locator.Type is GameType.BillyHatcherGC or GameType.BillyHatcherPC)
                     {
+                        PuyoFile gvm = new PuyoFile(action.prd.files[t.Item2.ID]);
                         //Load GVM through Puyo
-                        //TODO
                         /*
-                        action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, t.Item1, f,
+                        action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, t.Item1, Puyo2TPF.PuyoFile2TPF(gvm),
                             action.AccessLevel, Locator.Type));
                         i++;
                         */
