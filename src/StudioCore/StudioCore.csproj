@@ -439,8 +439,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Aqua Toolset\PSO2-Aqua-Library\AquaModelLibrary.Core\AquaModelLibrary.Core.csproj" />
     <ProjectReference Include="..\..\..\Aqua Toolset\PSO2-Aqua-Library\AquaModelLibrary.Data\AquaModelLibrary.Data.csproj" />
+    <ProjectReference Include="..\..\..\Aqua Toolset\PSO2-Aqua-Library\AquaModelLibrary.Helpers\AquaModelLibrary.Helpers.csproj" />
+    <ProjectReference Include="..\..\..\Aqua Toolset\PSO2-Aqua-Library\SAToolsShared\ArchiveLib\ArchiveLib.csproj" />
+    <ProjectReference Include="..\..\..\Aqua Toolset\PSO2-Aqua-Library\SAToolsShared\VrSharp\VrSharp.csproj" />
     <ProjectReference Include="..\SoapstoneLib\SoapstoneLib\SoapstoneLib.csproj" />
     <ProjectReference Include="..\Andre\Andre.Formats\Andre.Formats.csproj" />
     <ProjectReference Include="..\HKX2\HKX2\HKX2.csproj" />

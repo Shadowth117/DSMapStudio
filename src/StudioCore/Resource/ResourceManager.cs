@@ -2,6 +2,7 @@
 using ArchiveLib;
 using ImGuiNET;
 using Microsoft.Extensions.Logging;
+using Puyo2TPFConversion;
 using SoulsFormats;
 using StudioCore.Scene;
 using System;
@@ -105,8 +106,15 @@ public static class ResourceManager
         for (var i = 0; i < action._tpf.Textures.Count; i++)
         {
             TPF.Texture tex = action._tpf.Textures[i];
-            ret[i] = new LoadTPFTextureResourceRequest($@"{action._virtpathbase}/{tex.Name}", action._tpf, i,
-                action._accessLevel, action._game);
+            if(action._game == GameType.BillyHatcherGC || action._game == GameType.BillyHatcherPC)
+            {
+                ret[i] = new LoadTPFTextureResourceRequest(tex.Name, action._tpf, i,
+                    action._accessLevel, action._game);
+            } else
+            {
+                ret[i] = new LoadTPFTextureResourceRequest($@"{action._virtpathbase}/{tex.Name}", action._tpf, i,
+                    action._accessLevel, action._game);
+            }
         }
 
         action._tpf = null;
@@ -135,12 +143,9 @@ public static class ResourceManager
                             //Load GVM through Puyo
                             if(lnd.gvm != null)
                             {
-
-                                /*
                                 action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, p.Item2, Puyo2TPF.PuyoFile2TPF(lnd.gvm),
                                     action.AccessLevel, Locator.Type));
                                 i++;
-                                */
                             }
                         }
                     } else
@@ -159,11 +164,9 @@ public static class ResourceManager
                     {
                         PuyoFile gvm = new PuyoFile(action.prd.files[t.Item2.ID]);
                         //Load GVM through Puyo
-                        /*
                         action._job.AddLoadTPFResources(new LoadTPFResourcesAction(action._job, t.Item1, Puyo2TPF.PuyoFile2TPF(gvm),
                             action.AccessLevel, Locator.Type));
                         i++;
-                        */
                     }
                     else
                     {
