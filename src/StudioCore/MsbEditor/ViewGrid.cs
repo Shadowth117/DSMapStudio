@@ -36,7 +36,7 @@ public class ViewGrid
         if (CFG.Current.Map_EnableViewportGrid)
         {
             ViewportGrid.BaseColor = GetViewGridColor(CFG.Current.GFX_Viewport_Grid_Color);
-            ViewportGrid.Visible = true;
+            ViewportGrid.Visible = false;
             ViewportGrid.World = new Transform(0, CFG.Current.Map_ViewportGrid_Offset, 0, 0, 0, 0).WorldMatrix;
         }
         else

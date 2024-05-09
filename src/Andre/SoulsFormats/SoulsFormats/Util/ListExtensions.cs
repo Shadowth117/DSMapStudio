@@ -2,7 +2,7 @@
 
 namespace SoulsFormats
 {
-    internal static class ListExtensions
+    public static class ListExtensions
     {
         public static T EchoAdd<T>(this List<T> list, T item)
         {

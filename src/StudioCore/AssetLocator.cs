@@ -481,6 +481,10 @@ public class AssetLocator
     {
         AssetDescription ad = new();
         ad.AssetPath = null;
+        if(Type == GameType.BillyHatcherGC || Type == GameType.BillyHatcherPC)
+        {
+            ad.AssetPath = "amem_boot.nrc";
+        }
         if (mapid.Length != 12)
         {
             return ad;

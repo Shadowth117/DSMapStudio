@@ -1,6 +1,7 @@
 ﻿using Andre.Formats;
 using Microsoft.Extensions.Logging;
 using SoulsFormats;
+using StudioCore.MsbEditor.MSBTypes.MSBillyData;
 using StudioCore.ParamEditor;
 using StudioCore.Resource;
 using StudioCore.Scene;
@@ -693,6 +694,8 @@ public class Universe
             switch (_assetLocator.Type)
             {
                 // imgui checkbox click seems to break at some point after 8 (8*32) checkboxes, so let's just hope that never happens, yeah?
+                case GameType.BillyHatcherGC:
+                case GameType.BillyHatcherPC:
                 case GameType.DemonsSouls:
                 case GameType.DarkSoulsPTDE:
                 case GameType.DarkSoulsRemastered:
@@ -720,7 +723,11 @@ public class Universe
             }
 
             IMsb msb;
-            if (_assetLocator.Type == GameType.DarkSoulsIII)
+            if (_assetLocator.Type == GameType.BillyHatcherPC || _assetLocator.Type == GameType.BillyHatcherGC)
+            {
+                msb = MSBilly.Read(AssetLocator.billyStageDef.defsDict[mapid]);
+            }
+            else if (_assetLocator.Type == GameType.DarkSoulsIII)
             {
                 msb = MSB3.Read(ad.AssetPath);
             }
@@ -1467,8 +1474,6 @@ public class Universe
             else
             {
                 msb = new MSB1();
-                //var t = MSB1.Read(ad.AssetPath);
-                //((MSB1)msb).Models = t.Models;
             }
 
             map.SerializeToMSB(msb, _assetLocator.Type);
@@ -1598,10 +1603,5 @@ public class Universe
         {
             UnloadContainer(un, clearFromList);
         }
-    }
-
-    public void LoadFlver(string name, FLVER2 flver)
-    {
-        ObjectContainer c = new(this, name);
     }
 }
